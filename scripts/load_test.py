@@ -453,7 +453,11 @@ async def run_load_test(
     stop_on_gateway_quota: bool,
 ) -> tuple[list[dict[str, object]], str | None]:
     timeout = httpx.Timeout(timeout_seconds)
-    async with httpx.AsyncClient(base_url=api_base_url, timeout=timeout) as client:
+    async with httpx.AsyncClient(
+        base_url=api_base_url,
+        timeout=timeout,
+        trust_env=False,
+    ) as client:
         if not await _preflight(client):
             return [], "preflight_failed"
         for index in range(warmup_requests):

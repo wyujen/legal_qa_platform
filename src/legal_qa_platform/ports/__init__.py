@@ -14,6 +14,8 @@ from .repositories import (
     PublishSummary,
     QaRunRepository,
     RepositoryLifecycle,
+    RepositoryReadinessCategory,
+    RepositoryReadinessResult,
     SyncRun,
 )
 from .vector_store import VectorHit, VectorPoint, VectorStore
@@ -35,6 +37,8 @@ __all__ = [
     "PublishSummary",
     "QaRunRepository",
     "RepositoryLifecycle",
+    "RepositoryReadinessCategory",
+    "RepositoryReadinessResult",
     "Span",
     "SyncRun",
     "Trace",

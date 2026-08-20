@@ -58,10 +58,11 @@ Windows必須使用這個launcher，讓psycopg async在selector event loop執行
 
 | Error 類別 | 意義與安全處理 |
 | --- | --- |
-| timeout / connection refused | 確認 endpoint 類型、port 與部署網路可達性；不要顯示 DSN |
-| authentication failed | 只回報 authentication 類別；由 Human Operator 檢查注入，不要求 password |
-| permission denied | Migration 只能要求 application-owned schema/table 權限；不得索取 admin credential |
-| missing relation/schema | 以 `python scripts/migrate.py` 執行 repeatable migration，再重跑 smoke |
+| `timeout` | 確認 endpoint 類型、port 與部署網路可達性；不要顯示 DSN |
+| `authentication_failed` | 只回報 authentication 類別；由 Human Operator 檢查注入，不要求 password |
+| `permission_denied` | Migration 只能要求 application-owned schema/table 權限；不得索取 admin credential |
+| `schema_missing` | 以 `python scripts/migrate.py` 執行 repeatable migration，再重跑 smoke |
+| `database_error` | 一般driver/database失敗；僅使用server與平台端安全診斷，不貼exception、endpoint或DSN |
 | `published_snapshot=false` | 先確認migration，再以正確full/partial mode完成同步；不要把running/failed run手動標成成功 |
 | keyword latency 高 | 查看 index/query plan 的非敏感摘要、pool wait 與 candidate count，不記錄 raw question |
 

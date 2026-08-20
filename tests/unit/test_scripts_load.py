@@ -184,6 +184,46 @@ def test_api_base_url_rejects_embedded_credentials() -> None:
         load_test.validate_api_base_url("https://example.invalid:not-a-port")
 
 
+@pytest.mark.asyncio
+async def test_load_test_http_client_ignores_undocumented_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        async def __aenter__(self) -> FakeAsyncClient:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    async def failed_preflight(_client: object) -> bool:
+        return False
+
+    monkeypatch.setattr(load_test.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(load_test, "_preflight", failed_preflight)
+
+    levels, reason = await load_test.run_load_test(
+        api_base_url="https://api.example.invalid",
+        scenario="health",
+        questions=["測試"],
+        profile_name="platform-baseline-v1",
+        concurrency_levels=[1],
+        requests_per_level=1,
+        warmup_requests=0,
+        timeout_seconds=1.0,
+        stop_error_rate=None,
+        stop_on_gateway_quota=False,
+    )
+
+    assert levels == []
+    assert reason == "preflight_failed"
+    assert captured["trust_env"] is False
+
+
 def test_missing_runtime_output_never_prints_present_secret(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

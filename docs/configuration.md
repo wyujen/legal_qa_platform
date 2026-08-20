@@ -86,6 +86,18 @@ python -m streamlit run src/legal_qa_platform/ui/streamlit_app.py -- --api-base-
 Compose 與 Kubernetes 範本也使用此 argument，把 UI 指向各自的 API service。
 UI 不直接 import QA service。
 
+## HTTP transport environment boundary
+
+專案自行建立的 LiteLLM、Qdrant、Streamlit 與 load-test HTTP clients 明確設定
+`trust_env=False`。連線路由只能由上述 13-name contract 的 endpoint 或已記錄的
+`--api-base-url`決定，不會隱式套用HTTPX支援的system proxy、`NO_PROXY`或TLS
+certificate environment設定。這可避免規格外environment variable在不同terminal、
+service或container中暗中改變production behavior。
+
+若部署環境確實需要 HTTP proxy 或自訂 CA，必須先把所需設定正式加入 allowlisted
+configuration contract、deployment references、安全文件與測試；不得依賴 HTTP
+library 自動讀取未記錄的 process environment。
+
 ## Langfuse
 
 目前 13-name contract 沒有 Langfuse runtime configuration，因此預設使用

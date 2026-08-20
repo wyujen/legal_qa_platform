@@ -42,6 +42,7 @@ def _post(base_url: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
             f"{base_url}{path}",
             json=payload,
             timeout=120.0,
+            trust_env=False,
         )
         response.raise_for_status()
         data = response.json()

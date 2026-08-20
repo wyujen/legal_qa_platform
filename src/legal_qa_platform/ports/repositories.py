@@ -15,6 +15,26 @@ from uuid import UUID
 
 from legal_qa_platform.domain.legal import LegalProvision
 
+RepositoryReadinessCategory = Literal[
+    "ready",
+    "schema_missing",
+    "timeout",
+    "authentication_failed",
+    "permission_denied",
+    "database_error",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryReadinessResult:
+    """Allowlisted persistence readiness outcome safe for diagnostics."""
+
+    category: RepositoryReadinessCategory
+
+    @property
+    def ready(self) -> bool:
+        return self.category == "ready"
+
 
 @dataclass(frozen=True, slots=True)
 class SyncRun:
@@ -74,6 +94,8 @@ class RepositoryLifecycle(Protocol):
     async def close(self) -> None: ...
 
     async def is_ready(self) -> bool: ...
+
+    async def readiness_status(self) -> RepositoryReadinessResult: ...
 
     async def has_published_snapshot(
         self,
@@ -234,6 +256,8 @@ __all__ = [
     "ProvisionWrite",
     "PublishSummary",
     "QaRunRepository",
+    "RepositoryReadinessCategory",
+    "RepositoryReadinessResult",
     "RepositoryLifecycle",
     "SyncRun",
 ]

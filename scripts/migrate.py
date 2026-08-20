@@ -13,8 +13,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from legal_qa_platform.adapters.postgres import (
-    PostgresRepository,
-    create_postgres_pool,
+    create_postgres_repository,
 )
 from legal_qa_platform.async_runtime import run_async
 from legal_qa_platform.config import RuntimeSettings
@@ -48,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def run_migrations(settings: RuntimeSettings, migrations: Path) -> int:
-    repository = PostgresRepository(create_postgres_pool(settings))
+    repository = create_postgres_repository(settings)
     opened = False
     try:
         await repository.open()

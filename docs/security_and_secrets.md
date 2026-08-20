@@ -29,6 +29,9 @@
    body、header、DSN 或 credential-bearing URL。
 5. Object representation、health/readiness、test assertion 與 trace 都要驗證不會
    洩漏敏感值。
+6. Repository-owned HTTP clients 必須停用隱式 environment trust；系統 proxy、
+   `NO_PROXY`與TLS certificate environment不是目前allowlisted runtime contract，
+   不得暗中成為連線或credential來源。
 
 資料庫身分只能視為 development-time existing credential，不得假設具有
 superuser、database administrator 或 cluster administrator 權限。Migration 只能

@@ -10,13 +10,17 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
+from psycopg import AsyncConnection
+from psycopg import errors as psycopg_errors
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
-from psycopg_pool import AsyncConnectionPool
+from psycopg_pool import AsyncConnectionPool, PoolTimeout
+from pydantic import SecretStr
 
 from legal_qa_platform.config import RuntimeSettings
 from legal_qa_platform.domain.legal import (
@@ -30,8 +34,49 @@ from legal_qa_platform.ports.repositories import (
     ProvisionSyncState,
     ProvisionWrite,
     PublishSummary,
+    RepositoryReadinessCategory,
+    RepositoryReadinessResult,
     SyncRun,
 )
+
+_POSTGRES_TIMEOUT_SECONDS = 2
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _PostgresConnectionConfig:
+    """Minimal driver configuration retained only inside the adapter."""
+
+    host: str
+    port: int
+    user: str
+    password: SecretStr
+    database: str
+
+
+def _connection_config(settings: RuntimeSettings) -> _PostgresConnectionConfig:
+    endpoint = settings.require_postgres()
+    assert settings.postgres_user is not None
+    assert settings.postgres_password is not None
+    assert settings.postgres_database is not None
+    return _PostgresConnectionConfig(
+        host=endpoint.host,
+        port=endpoint.port,
+        user=settings.postgres_user,
+        password=settings.postgres_password,
+        database=settings.postgres_database,
+    )
+
+
+def _driver_kwargs(config: _PostgresConnectionConfig) -> dict[str, Any]:
+    """Unwrap the credential only at the PostgreSQL driver boundary."""
+
+    return {
+        "host": config.host,
+        "port": config.port,
+        "user": config.user,
+        "password": config.password.get_secret_value(),
+        "dbname": config.database,
+    }
 
 
 class _SuppressPsycopgPoolDiagnostics(logging.Filter):
@@ -67,38 +112,88 @@ def create_postgres_pool(
 ) -> AsyncConnectionPool[Any]:
     """Build a closed pool after fail-fast validation, without a printable DSN."""
 
-    endpoint = settings.require_postgres()
-    assert settings.postgres_user is not None
-    assert settings.postgres_password is not None
-    assert settings.postgres_database is not None
+    config = _connection_config(settings)
     _suppress_psycopg_pool_diagnostics()
     return AsyncConnectionPool(
         conninfo="",
-        kwargs={
-            "host": endpoint.host,
-            "port": endpoint.port,
-            "user": settings.postgres_user,
-            "password": settings.postgres_password.get_secret_value(),
-            "dbname": settings.postgres_database,
-        },
+        kwargs=_driver_kwargs(config),
         min_size=min_size,
         max_size=max_size,
-        timeout=2.0,
+        timeout=float(_POSTGRES_TIMEOUT_SECONDS),
         open=False,
         name="legal_qa_platform",
     )
 
 
+def create_postgres_repository(settings: RuntimeSettings) -> PostgresRepository:
+    """Compose the pool and independent, classifiable readiness connection."""
+
+    config = _connection_config(settings)
+    return PostgresRepository(
+        create_postgres_pool(settings),
+        readiness_config=config,
+    )
+
+
+def _database_readiness_category(exc: Exception) -> RepositoryReadinessCategory:
+    """Classify driver failures without returning their sensitive details."""
+
+    if isinstance(
+        exc,
+        (TimeoutError, PoolTimeout, psycopg_errors.ConnectionTimeout),
+    ):
+        return "timeout"
+    if isinstance(
+        exc,
+        (
+            psycopg_errors.InvalidAuthorizationSpecification,
+            psycopg_errors.InvalidPassword,
+        ),
+    ):
+        return "authentication_failed"
+    if isinstance(exc, (PermissionError, psycopg_errors.InsufficientPrivilege)):
+        return "permission_denied"
+
+    sqlstate = getattr(exc, "sqlstate", None)
+    if isinstance(sqlstate, str):
+        if sqlstate.startswith("28"):
+            return "authentication_failed"
+        if sqlstate == "42501":
+            return "permission_denied"
+
+    exception_name = type(exc).__name__.casefold()
+    if "authentication" in exception_name or "password" in exception_name:
+        return "authentication_failed"
+    if "permission" in exception_name or "privilege" in exception_name:
+        return "permission_denied"
+    if "timeout" in exception_name:
+        return "timeout"
+
+    # libpq connection failures don't always retain a SQLSTATE. Inspect only
+    # fixed driver phrases and never return, retain, or log the source text.
+    try:
+        message = str(exc).casefold()
+    except Exception:
+        return "database_error"
+    if any(
+        marker in message
+        for marker in (
+            "password authentication failed",
+            "authentication failed",
+            "no password supplied",
+            "pg_hba.conf rejects connection",
+        )
+    ):
+        return "authentication_failed"
+    if "permission denied" in message or "insufficient privilege" in message:
+        return "permission_denied"
+    if "timeout" in message or "timed out" in message:
+        return "timeout"
+    return "database_error"
+
+
 def _safe_database_error(exc: Exception) -> ExternalServiceError:
-    name = type(exc).__name__.casefold()
-    if "timeout" in name:
-        category = "timeout"
-    elif "permission" in name or "privilege" in name:
-        category = "permission_denied"
-    elif "auth" in name or "password" in name:
-        category = "authentication_failed"
-    else:
-        category = "database_error"
+    category = _database_readiness_category(exc)
     return ExternalServiceError("postgresql", category)
 
 
@@ -140,8 +235,14 @@ def _row_to_provision(row: Mapping[str, Any]) -> LegalProvision:
 class PostgresRepository:
     """Async repository; all public failures are classified and redacted."""
 
-    def __init__(self, pool: AsyncConnectionPool[Any]) -> None:
+    def __init__(
+        self,
+        pool: AsyncConnectionPool[Any],
+        *,
+        readiness_config: _PostgresConnectionConfig | None = None,
+    ) -> None:
         self._pool = pool
+        self._readiness_config = readiness_config
 
     async def open(self) -> None:
         try:
@@ -155,16 +256,37 @@ class PostgresRepository:
         await self._pool.close()
 
     async def is_ready(self) -> bool:
+        return (await self.readiness_status()).ready
+
+    async def readiness_status(self) -> RepositoryReadinessResult:
+        """Return schema readiness using only a fixed diagnostic taxonomy."""
+
         try:
+            if self._readiness_config is not None:
+                connection = await AsyncConnection.connect(
+                    conninfo="",
+                    **_driver_kwargs(self._readiness_config),
+                    connect_timeout=_POSTGRES_TIMEOUT_SECONDS,
+                )
+                try:
+                    return await self._readiness_on_connection(connection)
+                finally:
+                    await connection.close()
             async with self._pool.connection() as connection:
-                async with connection.cursor() as cursor:
-                    await cursor.execute(
-                        "SELECT to_regclass('legal_qa.legal_provisions')"
-                    )
-                    row = await cursor.fetchone()
-                    return bool(row and row[0])
-        except Exception:
-            return False
+                return await self._readiness_on_connection(connection)
+        except Exception as exc:
+            return RepositoryReadinessResult(category=_database_readiness_category(exc))
+
+    @staticmethod
+    async def _readiness_on_connection(
+        connection: AsyncConnection[Any],
+    ) -> RepositoryReadinessResult:
+        async with connection.cursor() as cursor:
+            await cursor.execute("SELECT to_regclass('legal_qa.legal_provisions')")
+            row = await cursor.fetchone()
+        return RepositoryReadinessResult(
+            category="ready" if row and row[0] else "schema_missing"
+        )
 
     async def has_published_snapshot(
         self,
@@ -1249,4 +1371,5 @@ class PostgresRepository:
 __all__ = [
     "PostgresRepository",
     "create_postgres_pool",
+    "create_postgres_repository",
 ]

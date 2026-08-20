@@ -475,3 +475,20 @@ def test_streamlit_ui_is_a_rest_client_and_does_not_import_qa_services() -> None
     assert '"/api/v1/chat"' in source
     assert '"/api/v1/feedback"' in source
     assert "QaService" not in source
+
+    http_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "httpx"
+    ]
+    assert http_calls
+    for call in http_calls:
+        trust_env = next(
+            (keyword.value for keyword in call.keywords if keyword.arg == "trust_env"),
+            None,
+        )
+        assert isinstance(trust_env, ast.Constant)
+        assert trust_env.value is False

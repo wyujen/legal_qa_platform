@@ -128,8 +128,8 @@ async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
     started = perf_counter()
     try:
         await container.open()
-        ready = await container.repository.is_ready()
-        if ready:
+        postgres_result = await container.repository.readiness_status()
+        if postgres_result.ready:
             print(
                 "[PASS] PostgreSQL application schema "
                 f"latency_ms={_elapsed_ms(started)}"
@@ -155,6 +155,7 @@ async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
             failures += 1
             print(
                 "[FAIL] PostgreSQL application schema "
+                f"category={postgres_result.category} "
                 f"latency_ms={_elapsed_ms(started)}"
             )
     except Exception as exc:

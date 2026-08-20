@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -12,6 +13,35 @@ from legal_qa_platform.adapters.qdrant import QdrantVectorStore
 from legal_qa_platform.errors import ExternalServiceError
 from legal_qa_platform.ports.models import ChatMessage
 from legal_qa_platform.ports.vector_store import VectorPoint
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "adapter_factory",
+    [LiteLLMGateway, QdrantVectorStore],
+)
+async def test_owned_dependency_http_clients_ignore_undocumented_environment(
+    adapter_factory: Callable[..., object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
+    adapter = adapter_factory(
+        "https://dependency.example.invalid",
+        SecretStr("unit-test-key"),
+    )
+    await adapter.aclose()  # type: ignore[attr-defined]
+
+    assert captured["trust_env"] is False
 
 
 @pytest.mark.asyncio

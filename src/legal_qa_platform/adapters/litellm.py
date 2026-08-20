@@ -38,6 +38,7 @@ class LiteLLMGateway:
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(timeout_seconds),
+            trust_env=False,
             headers={
                 "Authorization": f"Bearer {api_key.get_secret_value()}",
                 "Content-Type": "application/json",

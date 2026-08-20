@@ -9,8 +9,7 @@ from pathlib import Path
 from legal_qa_platform.adapters.litellm import LiteLLMGateway
 from legal_qa_platform.adapters.observability import NoopObservability
 from legal_qa_platform.adapters.postgres import (
-    PostgresRepository,
-    create_postgres_pool,
+    create_postgres_repository,
 )
 from legal_qa_platform.adapters.qdrant import QdrantVectorStore
 from legal_qa_platform.config import RuntimeSettings
@@ -56,7 +55,7 @@ class ApplicationContainer:
             endpoints.qdrant_http_url,
             runtime.qdrant_api_key,
         )
-        repository = PostgresRepository(create_postgres_pool(runtime))
+        repository = create_postgres_repository(runtime)
         tracing = observability or NoopObservability()
         retrieval = RetrievalService(
             repository=repository,
