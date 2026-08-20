@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 from pathlib import Path
 from typing import Literal, cast
 
 from pydantic import ValidationError
 
+from legal_qa_platform.async_runtime import run_async
 from legal_qa_platform.config import RuntimeSettings
 from legal_qa_platform.container import ApplicationContainer
 from legal_qa_platform.services.data_loader import load_legal_provisions
@@ -150,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     mode = cast(Literal["full_snapshot", "partial"], args.mode.replace("-", "_"))
-    return asyncio.run(
+    return run_async(
         synchronize(
             settings=settings,
             data_path=data_path,

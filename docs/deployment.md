@@ -18,7 +18,7 @@ loader以目前 process working directory解析這些versioned assets，不會�
 python -m pip install -e ".[dev,ui,observability]"
 python scripts/migrate.py
 python scripts/sync_laws.py --mode full-snapshot
-uvicorn legal_qa_platform.api.app:app --host 0.0.0.0 --port 8000
+python -m legal_qa_platform.api.server --host 0.0.0.0 --port 8000
 ```
 
 `full-snapshot` 只能用於完整權威資料；增量資料使用：

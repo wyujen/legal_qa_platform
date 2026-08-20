@@ -86,6 +86,17 @@ python scripts/sync_laws.py --mode partial
 python scripts/smoke_test.py
 ```
 
+`auto`（預設）與正式應用共用 internal-first precedence。若同一個本機process已同時
+注入internal與public/external endpoints，但工作站只能到達後者，可明確執行：
+
+```powershell
+python scripts/smoke_test.py --endpoint-scope public
+```
+
+`--endpoint-scope`只在既有的documented endpoint fields中選擇，不接受URL或credential；
+smoke輸出會列出`internal`／`external`／`public` family，不列實際endpoint。部署網路內
+需要驗證internal endpoints時可使用`--endpoint-scope internal`。
+
 Smoke test 只讀目前 process environment，不能接受 API key、password 或 Secret
 file flags。它應分層確認：
 

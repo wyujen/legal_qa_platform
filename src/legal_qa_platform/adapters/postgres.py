@@ -7,6 +7,7 @@ whose keyword arguments were built from already validated runtime settings.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -33,6 +34,31 @@ from legal_qa_platform.ports.repositories import (
 )
 
 
+class _SuppressPsycopgPoolDiagnostics(logging.Filter):
+    """Drop third-party pool records that may contain connection material.
+
+    ``psycopg_pool`` interpolates raw connection exceptions into its own warning
+    records before the repository can translate them to the application's safe
+    error taxonomy.  The repository and readiness boundaries already retain the
+    useful outcome as a redacted category or boolean, so these library-owned
+    diagnostic records are intentionally suppressed.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return False
+
+
+_PSYCOPG_POOL_DIAGNOSTIC_FILTER = _SuppressPsycopgPoolDiagnostics()
+
+
+def _suppress_psycopg_pool_diagnostics() -> None:
+    """Install the process-wide, narrowly scoped pool diagnostic filter once."""
+
+    pool_logger = logging.getLogger("psycopg.pool")
+    if _PSYCOPG_POOL_DIAGNOSTIC_FILTER not in pool_logger.filters:
+        pool_logger.addFilter(_PSYCOPG_POOL_DIAGNOSTIC_FILTER)
+
+
 def create_postgres_pool(
     settings: RuntimeSettings,
     *,
@@ -45,6 +71,7 @@ def create_postgres_pool(
     assert settings.postgres_user is not None
     assert settings.postgres_password is not None
     assert settings.postgres_database is not None
+    _suppress_psycopg_pool_diagnostics()
     return AsyncConnectionPool(
         conninfo="",
         kwargs={

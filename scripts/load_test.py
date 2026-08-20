@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from legal_qa_platform import __version__
 from legal_qa_platform.api.schemas import HealthResponse, RetrieveResponse
+from legal_qa_platform.async_runtime import run_async
 from legal_qa_platform.domain.qa import ChatResponse
 from legal_qa_platform.services.data_loader import load_question_bank
 from legal_qa_platform.services.profile_loader import load_profile
@@ -569,7 +570,7 @@ def main(argv: list[str] | None = None) -> int:
 
     scenario = cast(Literal["health", "retrieve", "chat"], args.scenario)
     try:
-        result_levels, stopped_reason = asyncio.run(
+        result_levels, stopped_reason = run_async(
             run_load_test(
                 api_base_url=args.api_base_url,
                 scenario=scenario,

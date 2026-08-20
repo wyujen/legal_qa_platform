@@ -6,8 +6,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
-from legal_qa_platform.config.settings import DOCUMENTED_ENVIRONMENT_VARIABLES
+from legal_qa_platform.config.settings import (
+    DOCUMENTED_ENVIRONMENT_VARIABLES,
+    RuntimeSettings,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -119,6 +123,58 @@ def test_smoke_collection_probe_is_read_only() -> None:
     assert "collection_is_ready" in source
     assert "ensure_collection" not in source
     assert "has_published_snapshot" in source
+
+
+def _settings_with_both_endpoint_families() -> RuntimeSettings:
+    return RuntimeSettings.model_construct(
+        postgres_external_host="EXTERNAL_HOST_MARKER",
+        postgres_internal_host="INTERNAL_HOST_MARKER",
+        postgres_port=5432,
+        postgres_user="unit-test-user",
+        postgres_password=SecretStr("PRIVATE_PASSWORD_MARKER"),
+        postgres_database="unit-test-database",
+        qdrant_public_url="https://public-qdrant.example.invalid",
+        qdrant_internal_http_url="http://internal-qdrant.example.invalid",
+        qdrant_internal_grpc_endpoint=None,
+        qdrant_api_key=SecretStr("PRIVATE_QDRANT_MARKER"),
+        litellm_public_url="https://public-litellm.example.invalid",
+        litellm_internal_url="http://internal-litellm.example.invalid",
+        litellm_api_key=SecretStr("PRIVATE_LITELLM_MARKER"),
+    )
+
+
+def test_smoke_endpoint_scope_can_select_public_without_changing_app_default() -> None:
+    settings = _settings_with_both_endpoint_families()
+
+    automatic = smoke_test.select_endpoint_scope(settings, "auto")
+    public = smoke_test.select_endpoint_scope(settings, "public")
+    internal = smoke_test.select_endpoint_scope(settings, "internal")
+
+    assert automatic.postgres_host == "INTERNAL_HOST_MARKER"
+    assert automatic.qdrant_http_url == "http://internal-qdrant.example.invalid"
+    assert automatic.litellm_url == "http://internal-litellm.example.invalid"
+    assert public.postgres_host == "EXTERNAL_HOST_MARKER"
+    assert public.qdrant_http_url == "https://public-qdrant.example.invalid"
+    assert public.litellm_url == "https://public-litellm.example.invalid"
+    assert internal.postgres_host == "INTERNAL_HOST_MARKER"
+
+
+def test_smoke_endpoint_selection_message_contains_families_only() -> None:
+    settings = smoke_test.select_endpoint_scope(
+        _settings_with_both_endpoint_families(),
+        "public",
+    )
+
+    message = smoke_test.endpoint_selection_message(
+        settings,
+        requested_scope="public",
+    )
+
+    assert message == (
+        "[INFO] endpoint selection scope=public "
+        "postgres=external qdrant=public litellm=public"
+    )
+    assert "MARKER" not in message
 
 
 def test_api_base_url_rejects_embedded_credentials() -> None:

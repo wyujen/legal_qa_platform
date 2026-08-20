@@ -10,7 +10,9 @@ import httpx
 from pydantic import SecretStr
 
 from legal_qa_platform.adapters.http_safety import (
+    HttpReadinessResult,
     external_http_error,
+    probe_http_readiness,
     require_success,
 )
 from legal_qa_platform.errors import ExternalServiceError
@@ -39,15 +41,20 @@ class QdrantVectorStore:
         timeout_seconds: float = 30.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
+        self._base_url = base_url.rstrip("/")
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
-            base_url=base_url.rstrip("/"),
             timeout=httpx.Timeout(timeout_seconds),
             headers={
                 "api-key": api_key.get_secret_value(),
                 "Content-Type": "application/json",
             },
         )
+
+    def _url(self, path: str) -> str:
+        """Join an API path without discarding a reverse-proxy base prefix."""
+
+        return f"{self._base_url}/{path.lstrip('/')}"
 
     async def __aenter__(self) -> QdrantVectorStore:
         return self
@@ -67,7 +74,11 @@ class QdrantVectorStore:
         body: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         try:
-            response = await self._client.request(method, path, json=body)
+            response = await self._client.request(
+                method,
+                self._url(path),
+                json=body,
+            )
             require_success("qdrant", response)
             payload = response.json()
         except ExternalServiceError:
@@ -80,7 +91,7 @@ class QdrantVectorStore:
 
     async def _collection_config(self, name: str) -> tuple[int, str] | None:
         try:
-            response = await self._client.get(f"/collections/{name}")
+            response = await self._client.get(self._url(f"collections/{name}"))
         except Exception as exc:
             raise external_http_error("qdrant", exc) from None
         if response.status_code == 404:
@@ -327,8 +338,12 @@ class QdrantVectorStore:
         )
 
     async def is_ready(self) -> bool:
-        try:
-            response = await self._client.get("/readyz", timeout=2.0)
-            return response.status_code < 400
-        except Exception:
-            return False
+        return (await self.readiness_status()).ready
+
+    async def readiness_status(self) -> HttpReadinessResult:
+        """Return a redacted, allowlisted readiness result for diagnostics."""
+
+        return await probe_http_readiness(
+            self._client,
+            self._url("readyz"),
+        )

@@ -262,3 +262,145 @@ async def test_qdrant_collection_readiness_never_creates_a_missing_collection() 
 
     assert ready is False
     assert methods == ["GET"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "expected_category", "expected_ready"),
+    [
+        (200, "ready", True),
+        (302, "redirect", False),
+        (401, "authentication_failed", False),
+        (403, "authorization_failed", False),
+        (404, "endpoint_not_found", False),
+        (429, "rate_limited", False),
+        (503, "upstream_error", False),
+        (504, "timeout", False),
+    ],
+)
+async def test_litellm_readiness_returns_only_allowlisted_status_categories(
+    status_code: int,
+    expected_category: str,
+    expected_ready: bool,
+) -> None:
+    private_marker = "PRIVATE_RESPONSE_MARKER"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/health/readiness"
+        return httpx.Response(
+            status_code,
+            text=private_marker,
+            headers={"x-private-marker": private_marker},
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        gateway = LiteLLMGateway(
+            "https://litellm.example.invalid",
+            SecretStr("private-key-marker"),
+            client=client,
+        )
+        result = await gateway.readiness_status()
+
+    assert result.ready is expected_ready
+    assert result.category == expected_category
+    assert result.status_code == status_code
+    assert private_marker not in repr(result)
+    assert "litellm.example.invalid" not in repr(result)
+    assert "private-key-marker" not in repr(result)
+
+
+@pytest.mark.asyncio
+async def test_readiness_transport_error_is_redacted() -> None:
+    private_marker = "PRIVATE_TRANSPORT_MARKER"
+
+    async def failed(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(private_marker, request=request)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(failed),
+    ) as client:
+        store = QdrantVectorStore(
+            "https://qdrant.example.invalid",
+            SecretStr("private-key-marker"),
+            client=client,
+        )
+        result = await store.readiness_status()
+
+    assert result.ready is False
+    assert result.category == "connection_error"
+    assert result.status_code is None
+    assert private_marker not in repr(result)
+    assert "qdrant.example.invalid" not in repr(result)
+    assert "private-key-marker" not in repr(result)
+
+
+@pytest.mark.asyncio
+async def test_litellm_preserves_reverse_proxy_base_path() -> None:
+    paths: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path.endswith("/health/readiness"):
+            return httpx.Response(200)
+        if request.url.path.endswith("/v1/embeddings"):
+            return httpx.Response(
+                200,
+                json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]},
+            )
+        raise AssertionError(f"Unexpected request path: {request.url.path}")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        gateway = LiteLLMGateway(
+            "https://gateway.example.invalid/services/litellm/",
+            SecretStr("unit-test-key"),
+            client=client,
+        )
+        assert await gateway.is_ready() is True
+        await gateway.embed(["測試"], model="bge-m3", expected_dimension=2)
+
+    assert paths == [
+        "/services/litellm/health/readiness",
+        "/services/litellm/v1/embeddings",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_qdrant_preserves_reverse_proxy_base_path() -> None:
+    paths: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path.endswith("/readyz"):
+            return httpx.Response(200)
+        if request.url.path.endswith("/collections/baseline"):
+            return httpx.Response(
+                200,
+                json={
+                    "result": {
+                        "config": {
+                            "params": {"vectors": {"size": 1_024, "distance": "Cosine"}}
+                        }
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected request path: {request.url.path}")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        store = QdrantVectorStore(
+            "https://gateway.example.invalid/services/qdrant/",
+            SecretStr("unit-test-key"),
+            client=client,
+        )
+        assert await store.is_ready() is True
+        assert await store.collection_is_ready("baseline", dimension=1_024) is True
+
+    assert paths == [
+        "/services/qdrant/readyz",
+        "/services/qdrant/collections/baseline",
+    ]

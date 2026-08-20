@@ -8,7 +8,6 @@ not question text, generated answer text, credentials, endpoints, or headers.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import hashlib
 import unicodedata
 from collections import Counter
@@ -21,6 +20,7 @@ from typing import Literal, cast
 from pydantic import ValidationError
 
 from legal_qa_platform import __version__
+from legal_qa_platform.async_runtime import run_async
 from legal_qa_platform.config import RuntimeSettings
 from legal_qa_platform.container import ApplicationContainer
 from legal_qa_platform.domain.qa import LegalQaResponse, QuestionBankItem
@@ -461,7 +461,7 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         print_missing_variables(missing, command="python scripts/evaluate.py")
         return 2
-    return asyncio.run(
+    return run_async(
         run_evaluation(
             settings=settings,
             provisions_path=provisions_path,

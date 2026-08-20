@@ -5,8 +5,12 @@ FastAPI 是 delivery adapter，entry point 為 `legal_qa_platform.api.app:app`�
 ## Run
 
 ```powershell
-uvicorn legal_qa_platform.api.app:app --host 0.0.0.0 --port 8000
+python -m legal_qa_platform.api.server --host 0.0.0.0 --port 8000
 ```
+
+這個application-owned launcher在Windows使用psycopg async相容的selector event
+loop；Linux及其他平台維持標準`asyncio.run`行為。Operator不應以直接呼叫
+`uvicorn legal_qa_platform.api.app:app`取代它。
 
 服務啟動前由Human Operator把文件化runtime variables注入目前process。Application不讀設定檔或搜尋credential。Local Swagger/OpenAPI由FastAPI產生；production是否公開documentation route屬deployment policy。
 

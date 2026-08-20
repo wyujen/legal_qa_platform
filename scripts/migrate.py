@@ -8,7 +8,6 @@ failure categories.
 from __future__ import annotations
 
 import argparse
-import asyncio
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -17,6 +16,7 @@ from legal_qa_platform.adapters.postgres import (
     PostgresRepository,
     create_postgres_pool,
 )
+from legal_qa_platform.async_runtime import run_async
 from legal_qa_platform.config import RuntimeSettings
 
 try:
@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         print_missing_variables(missing, command="python scripts/migrate.py")
         return 2
-    return asyncio.run(run_migrations(settings, migrations))
+    return run_async(run_migrations(settings, migrations))
 
 
 if __name__ == "__main__":

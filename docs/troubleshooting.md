@@ -36,8 +36,11 @@ error category、timeout/latency、embedding dimension、candidate count、stabl
 API 的正式啟動入口：
 
 ```powershell
-uvicorn legal_qa_platform.api.app:app --host 0.0.0.0 --port 8000
+python -m legal_qa_platform.api.server --host 0.0.0.0 --port 8000
 ```
+
+Windows必須使用這個launcher，讓psycopg async在selector event loop執行；直接
+呼叫Uvicorn可能在application import前建立不相容的Proactor event loop。
 
 - Import error：確認從正式 repository 安裝 package，執行
   `python -m pip install -e ".[dev,ui,observability]"`；不可加入唯讀參考 path。

@@ -8,13 +8,14 @@ headers, response bodies, settings, or exception messages.
 from __future__ import annotations
 
 import argparse
-import asyncio
 from pathlib import Path
 from time import perf_counter
 from typing import Literal, cast
 
 from pydantic import ValidationError
 
+from legal_qa_platform.adapters.http_safety import HttpReadinessResult
+from legal_qa_platform.async_runtime import run_async
 from legal_qa_platform.config import RuntimeSettings
 from legal_qa_platform.container import ApplicationContainer
 from legal_qa_platform.domain.retrieval import RagContext
@@ -38,6 +39,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path
     )
 
 DEFAULT_PROFILE_PATH = PROJECT_ROOT / "profiles" / "platform-baseline-v1.json"
+EndpointScope = Literal["auto", "public", "internal"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,11 +49,69 @@ def build_parser() -> argparse.ArgumentParser:
         default="profiles/platform-baseline-v1.json",
         help="Repository-relative RAG profile path.",
     )
+    parser.add_argument(
+        "--endpoint-scope",
+        choices=("auto", "public", "internal"),
+        default="auto",
+        help=(
+            "Select endpoint families for this smoke run. 'auto' preserves "
+            "application precedence; 'public' selects external/public endpoints."
+        ),
+    )
     return parser
 
 
 def _elapsed_ms(started: float) -> int:
     return max(0, round((perf_counter() - started) * 1_000))
+
+
+def select_endpoint_scope(
+    settings: RuntimeSettings,
+    scope: EndpointScope,
+) -> RuntimeSettings:
+    """Select existing endpoint fields without adding configuration or credentials."""
+
+    if scope == "auto":
+        return settings
+    if scope == "public":
+        return settings.model_copy(
+            update={
+                "postgres_internal_host": None,
+                "qdrant_internal_http_url": None,
+                "litellm_internal_url": None,
+            }
+        )
+    return settings.model_copy(
+        update={
+            "postgres_external_host": None,
+            "qdrant_public_url": None,
+            "litellm_public_url": None,
+        }
+    )
+
+
+def endpoint_selection_message(
+    settings: RuntimeSettings,
+    *,
+    requested_scope: EndpointScope,
+) -> str:
+    """Describe selected endpoint families without retaining or printing values."""
+
+    status = settings.safe_status()
+    return (
+        "[INFO] endpoint selection "
+        f"scope={requested_scope} "
+        f"postgres={status['postgres_endpoint']} "
+        f"qdrant={status['qdrant_endpoint']} "
+        f"litellm={status['litellm_endpoint']}"
+    )
+
+
+def _readiness_fields(result: HttpReadinessResult) -> str:
+    fields = f"category={result.category}"
+    if result.status_code is not None:
+        fields = f"{fields} status={result.status_code}"
+    return fields
 
 
 async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
@@ -107,12 +167,19 @@ async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
     qdrant_ready = False
     started = perf_counter()
     try:
-        qdrant_ready = await container.qdrant.is_ready()
+        result = await container.qdrant.readiness_status()
+        qdrant_ready = result.ready
         if qdrant_ready:
-            print(f"[PASS] Qdrant readiness latency_ms={_elapsed_ms(started)}")
+            print(
+                "[PASS] Qdrant readiness "
+                f"{_readiness_fields(result)} latency_ms={_elapsed_ms(started)}"
+            )
         else:
             failures += 1
-            print(f"[FAIL] Qdrant readiness latency_ms={_elapsed_ms(started)}")
+            print(
+                "[FAIL] Qdrant readiness "
+                f"{_readiness_fields(result)} latency_ms={_elapsed_ms(started)}"
+            )
     except Exception as exc:
         failures += 1
         print(
@@ -151,12 +218,19 @@ async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
     litellm_ready = False
     started = perf_counter()
     try:
-        litellm_ready = await container.litellm.is_ready()
+        result = await container.litellm.readiness_status()
+        litellm_ready = result.ready
         if litellm_ready:
-            print(f"[PASS] LiteLLM readiness latency_ms={_elapsed_ms(started)}")
+            print(
+                "[PASS] LiteLLM readiness "
+                f"{_readiness_fields(result)} latency_ms={_elapsed_ms(started)}"
+            )
         else:
             failures += 1
-            print(f"[FAIL] LiteLLM readiness latency_ms={_elapsed_ms(started)}")
+            print(
+                "[FAIL] LiteLLM readiness "
+                f"{_readiness_fields(result)} latency_ms={_elapsed_ms(started)}"
+            )
     except Exception as exc:
         failures += 1
         print(
@@ -236,15 +310,24 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         profile_path = repository_path(args.profile, default=DEFAULT_PROFILE_PATH)
-        settings = RuntimeSettings()
+        settings = select_endpoint_scope(RuntimeSettings(), args.endpoint_scope)
     except (ValueError, ValidationError):
         print("[FAIL] runtime configuration is invalid; check documented types.")
         return 2
+    print(
+        endpoint_selection_message(
+            settings,
+            requested_scope=args.endpoint_scope,
+        )
+    )
     missing = settings.missing_for_runtime()
     if missing:
-        print_missing_variables(missing, command="python scripts/smoke_test.py")
+        command = "python scripts/smoke_test.py"
+        if args.endpoint_scope != "auto":
+            command = f"{command} --endpoint-scope {args.endpoint_scope}"
+        print_missing_variables(missing, command=command)
         return 2
-    return asyncio.run(run_smoke(settings, profile_path))
+    return run_async(run_smoke(settings, profile_path))
 
 
 if __name__ == "__main__":

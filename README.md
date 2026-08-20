@@ -36,7 +36,7 @@ credential 放入 command line、repository 或測試輸出。Human Operator 完
 python scripts/migrate.py
 python scripts/sync_laws.py --mode full-snapshot
 python scripts/smoke_test.py
-uvicorn legal_qa_platform.api.app:app --host 0.0.0.0 --port 8000
+python -m legal_qa_platform.api.server --host 0.0.0.0 --port 8000
 ```
 
 `full-snapshot` 僅適用完整權威資料；一般修補使用
