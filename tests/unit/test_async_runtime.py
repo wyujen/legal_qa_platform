@@ -87,7 +87,7 @@ def test_api_server_runs_inside_application_owned_runner(
 
 @pytest.mark.parametrize(
     "script_name",
-    ("evaluate.py", "load_test.py", "migrate.py", "smoke_test.py", "sync_laws.py"),
+    ("evaluate.py", "load_test.py", "smoke_test.py", "sync_laws.py"),
 )
 def test_async_operator_scripts_use_the_shared_runner(script_name: str) -> None:
     source = (PROJECT_ROOT / "scripts" / script_name).read_text(encoding="utf-8")

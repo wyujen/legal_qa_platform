@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
@@ -104,10 +103,6 @@ class RepositoryLifecycle(Protocol):
         embedding_dimension: int,
         vector_collection: str,
     ) -> bool: ...
-
-
-class MigrationRepository(Protocol):
-    async def apply_migrations(self, directory: Path) -> tuple[str, ...]: ...
 
 
 class LegalRepository(Protocol):
@@ -241,7 +236,7 @@ class ApplicationRepository(
     QaRunRepository,
     Protocol,
 ):
-    """Runtime persistence boundary; operator migration is deliberately separate."""
+    """Runtime persistence boundary; schema administration stays outside the app."""
 
 
 __all__ = [
@@ -249,7 +244,6 @@ __all__ = [
     "ConversationRepository",
     "IngestionRepository",
     "LegalRepository",
-    "MigrationRepository",
     "ProvisionSnapshot",
     "ProvisionSyncState",
     "ProvisionWrite",

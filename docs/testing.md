@@ -42,8 +42,8 @@ python -m pytest -m "not integration and not evaluation"
   mapping；
 - conversation context 與 RAG context 分離；
 - endpoint precedence、missing-name diagnostics、`SecretStr` redaction；
-- admin/runtime PostgreSQL settings 分離、database mismatch 在連線前失敗、migration
-  輸出不洩漏 credential，以及 runtime composition 不要求/使用 admin fields；
+- 13-name runtime settings boundary，以及 offline migration validator 不讀 environment、
+  不連 database、拒絕role/grant/destructive/placeholder SQL並維持transactional history；
 - Langfuse no-op 與 span failure 不影響 QA result；
 - FastAPI transport schema 與 application service 不洩漏 framework type。
 
@@ -69,14 +69,16 @@ Checked-in authoritative inputs 是 `data/legal_provisions.json` 與
 執行`python scripts/export_schemas.py`，並由離線測試／repository verification確認
 輸出deterministic且與runtime model一致；不要手工維護第二套schema定義。
 
-法規同步先由 Human Operator 在獨立 one-shot process 注入兩組 PostgreSQL
-names，執行 non-destructive migration：
+法規同步前先離線驗證 manual DDL bundle：
 
 ```powershell
 python scripts/migrate.py
 ```
 
-完成後改由只有 13 個 runtime names 的 process 依輸入語意選擇同步模式：
+這個命令不連線或套用 migration。Human Operator 依
+[DBeaver manual DDL workflow](database.md#dbeaver-manual-ddl-workflow) 執行整份
+`0001_initial.sql`、read-only post-check及runtime privilege設定。完成後由只有13個
+runtime names 的 process 依輸入語意選擇同步模式：
 
 ```powershell
 python scripts/sync_laws.py --mode full-snapshot
@@ -170,9 +172,8 @@ Verification 至少證明：
 - 所有保留的 JSON、schema、fixtures 與 domain behavior 均存在正式 repository；
 - tracked artifacts 不含真實 credential、credential loader 或 Secret manifest；
 - settings 只有 documented names，沒有 dotenv loading 或環境 dump；
-- `POSTGRES_ADMIN_*` 只能由 migration tooling 要求與 unwrap，不得進入
-  application runtime、sync/smoke/evaluation/load-test、Compose API 或 Kubernetes API
-  Deployment；
+- environment contract 僅含 13 個 runtime names；offline migration tooling 不讀
+  environment、endpoint 或 credential，也不自動連線或grant；
 - Docker/Kubernetes 只含 environment reference、`secretKeyRef` 與 placeholder。
 
 掃描失敗只能列檔名、行號與規則類別，不得回印疑似 credential 的匹配文字。
@@ -185,7 +186,8 @@ Verification 至少證明：
 | Ruff / mypy | 否 | 無 lint、型別錯誤 |
 | Repository verification | 否 | Independence 與 secret-safety 通過 |
 | Docker build | 否 | Frozen lock安裝成功，image沒有外部reference dependency |
-| PostgreSQL migration | 是，operator-only | Admin/runtime database相同，只建`legal_qa`物件/grants，輸出無Secret |
+| Offline SQL validation | 否 | Bundle transaction、repeatability、history與read-only post-check contract通過；明示database unchanged |
+| Manual PostgreSQL DDL | Human Operator 自行管理 | DBeaver整份script到達COMMIT；post-check每個`passed=true`；runtime權限符合capability allowlist |
 | Smoke / integration | 是 | 三個外部 dependency 與兩個 LiteLLM model operation 通過 |
 | 100 題 evaluation | 是 | 100 題完成並產生可比較、無 Secret 的 metrics |
 | Load test | 是 | 六個 concurrency 階段有完整 metrics 與瓶頸分類 |

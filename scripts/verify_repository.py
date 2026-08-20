@@ -21,9 +21,7 @@ from pydantic import SecretStr
 from legal_qa_platform import __version__
 from legal_qa_platform.config.settings import (
     DOCUMENTED_ENVIRONMENT_VARIABLES,
-    POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES,
     RUNTIME_ENVIRONMENT_VARIABLES,
-    PostgresMigrationSettings,
     RuntimeSettings,
 )
 from legal_qa_platform.services.data_loader import load_data_bundle
@@ -42,6 +40,19 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - direct script execution path
     from export_schemas import schema_models  # type: ignore[import-not-found, no-redef]
 
+try:
+    from scripts.migrate import (
+        MigrationBundleError,
+        validate_migration_bundle,
+        validate_read_only_postcheck,
+    )
+except ModuleNotFoundError:  # pragma: no cover - direct script execution path
+    from migrate import (  # type: ignore[import-not-found, no-redef]
+        MigrationBundleError,
+        validate_migration_bundle,
+        validate_read_only_postcheck,
+    )
+
 EXPECTED_PROVISIONS_SHA256 = (
     "523bb8fe135835dd3f0da65e49ac0f9fc367e6c6c295c39cc23ce2afc875834a"
 )
@@ -58,9 +69,6 @@ EXPECTED_ENVIRONMENT_VARIABLES = (
     "POSTGRES_EXTERNAL_HOST",
     "POSTGRES_INTERNAL_HOST",
     "POSTGRES_PORT",
-    "POSTGRES_ADMIN_USER",
-    "POSTGRES_ADMIN_PASSWORD",
-    "POSTGRES_ADMIN_DATABASE",
     "POSTGRES_LITELLM_USER",
     "POSTGRES_LITELLM_PASSWORD",
     "POSTGRES_LITELLM_DATABASE",
@@ -86,16 +94,6 @@ EXPECTED_RUNTIME_ENVIRONMENT_VARIABLES = (
     "LITELLM_PUBLIC_URL",
     "LITELLM_INTERNAL_URL",
     "LITELLM_API_KEY",
-)
-EXPECTED_POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES = (
-    "POSTGRES_EXTERNAL_HOST",
-    "POSTGRES_INTERNAL_HOST",
-    "POSTGRES_PORT",
-    "POSTGRES_ADMIN_USER",
-    "POSTGRES_ADMIN_PASSWORD",
-    "POSTGRES_ADMIN_DATABASE",
-    "POSTGRES_LITELLM_USER",
-    "POSTGRES_LITELLM_DATABASE",
 )
 _SCAN_DIRECTORIES = (
     "src",
@@ -487,23 +485,7 @@ def _verify_environment_contract(root: Path) -> list[Finding]:
                 "src/legal_qa_platform/config/settings.py",
             )
         )
-    migration_aliases = tuple(
-        str(field.validation_alias)
-        for field in PostgresMigrationSettings.model_fields.values()
-    )
-    if (
-        tuple(POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES)
-        != EXPECTED_POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES
-        or migration_aliases != EXPECTED_POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES
-    ):
-        findings.append(
-            Finding(
-                "migration_settings_environment_alias_contract",
-                "src/legal_qa_platform/config/settings.py",
-            )
-        )
     for settings_type, field_name in (
-        (PostgresMigrationSettings, "postgres_admin_password"),
         (RuntimeSettings, "postgres_password"),
         (RuntimeSettings, "qdrant_api_key"),
         (RuntimeSettings, "litellm_api_key"),
@@ -516,14 +498,13 @@ def _verify_environment_contract(root: Path) -> list[Finding]:
                     "src/legal_qa_platform/config/settings.py",
                 )
             )
-    for settings_type in (RuntimeSettings, PostgresMigrationSettings):
-        if settings_type.model_config.get("env_file") is not None:
-            findings.append(
-                Finding(
-                    "dotenv_loading_not_disabled",
-                    "src/legal_qa_platform/config/settings.py",
-                )
+    if RuntimeSettings.model_config.get("env_file") is not None:
+        findings.append(
+            Finding(
+                "dotenv_loading_not_disabled",
+                "src/legal_qa_platform/config/settings.py",
             )
+        )
 
     example = root / ".env.example"
     try:
@@ -616,6 +597,7 @@ def _verify_required_files(root: Path) -> list[Finding]:
         "data/source_law.txt",
         "data/collection_warnings.json",
         "migrations/0001_initial.sql",
+        "migrations/checks/0001_initial_readonly.sql",
         "profiles/platform-baseline-v1.json",
         "scripts/migrate.py",
         "scripts/sync_laws.py",
@@ -718,6 +700,13 @@ def _verify_data(root: Path) -> tuple[list[Finding], dict[str, int]]:
             findings.append(
                 Finding("legacy_id_reservation", "migrations/0001_initial.sql")
             )
+    try:
+        validate_migration_bundle(root / "migrations")
+        validate_read_only_postcheck(
+            root / "migrations" / "checks" / "0001_initial_readonly.sql"
+        )
+    except MigrationBundleError:
+        findings.append(Finding("manual_migration_bundle_contract", "migrations"))
     return findings, stats
 
 

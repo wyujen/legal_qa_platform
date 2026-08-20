@@ -10,6 +10,7 @@ Secret。
 ```powershell
 python scripts/verify_repository.py
 python -m pytest
+python scripts/migrate.py
 python scripts/smoke_test.py
 Invoke-WebRequest http://127.0.0.1:8000/health
 Invoke-WebRequest http://127.0.0.1:8000/ready
@@ -27,8 +28,8 @@ error category、timeout/latency、embedding dimension、candidate count、stabl
 | 症狀 | 檢查 | 處理 |
 | --- | --- | --- |
 | API/smoke 列出 missing names | 對照 `docs/configuration.md` 的 13-name runtime contract | 由 Human Operator 在 process 啟動前注入；不要貼值 |
-| Migration 列出 missing names | 對照額外 3-name operator migration contract | 只在獨立 one-shot process 注入；API runtime 不引用 |
-| Migration database mismatch | Admin/runtime target 不同 | 連線前已停止；Human Operator 只核對注入，不貼名稱或值 |
+| Offline migration bundle `[FAIL]` | 檢查 category 與 repository SQL diff | Validator 不連 DB；修正transaction/repeatability/history/prohibited-SQL contract後重跑，不加入role或placeholder |
+| DBeaver script 執行失敗 | 確認 active connection/catalog、完整 Execute SQL Script 與 object DDL權限 | Transaction不會記錄未完成version；修正後重跑整份checked-in SQL，不手動插入history |
 | 選到錯誤 endpoint 類型 | 查看 `safe_status()` 的 internal/public/missing 類別 | internal 欄位有值時會優先；修正 runtime injection，不改 domain logic |
 | Port validation error | 只確認型別與 1–65535 範圍 | 由 Human Operator 修正設定，不列印完整 settings |
 | Langfuse 沒有 trace | 目前 contract 未包含 Langfuse configuration | 預期使用 no-op；QA 應繼續，勿新增未核准 env knob |
@@ -61,16 +62,16 @@ Windows必須使用這個launcher，讓psycopg async在selector event loop執行
 | Error 類別 | 意義與安全處理 |
 | --- | --- |
 | `timeout` | 確認 endpoint 類型、port 與部署網路可達性；不要顯示 DSN |
-| `authentication_failed` | Smoke/API 只驗證 runtime identity；migration 只驗證 operator identity；由 Human Operator 核對對應 process 注入，不要求 password |
-| `permission_denied` | Migration 只使用已注入的 operator identity 建立 `legal_qa` 物件/grants；runtime identity 只需 DML/schema/sequence usage；不貼 credential |
-| `schema_missing` | 由獨立 operator process 以 `python scripts/migrate.py` 執行 repeatable migration，再用 runtime-only process 重跑 smoke |
+| `authentication_failed` | Smoke/API 只驗證 runtime identity；由 Human Operator 核對 runtime process injection，不要求 password |
+| `permission_denied` | 依 database guide 在 DBeaver Permissions/Privileges 檢查runtime capability allowlist；不貼identity或credential |
+| `schema_missing` | `scripts/migrate.py`只離線驗證；Human Operator依DBeaver manual workflow執行完整migration與read-only post-check，再重跑dependency smoke |
 | `database_error` | 一般driver/database失敗；僅使用server與平台端安全診斷，不貼exception、endpoint或DSN |
 | `published_snapshot=false` | 先確認migration，再以正確full/partial mode完成同步；不要把running/failed run手動標成成功 |
 | keyword latency 高 | 查看 index/query plan 的非敏感摘要、pool wait 與 candidate count，不記錄 raw question |
 
-不得修改、drop 或 migrate 無關的 LiteLLM tables。`POSTGRES_ADMIN_*` 只供
-one-shot DDL；`POSTGRES_LITELLM_*` 是日常 DML identity。正常 API、sync、smoke、
-evaluation 與 load-test process 不得帶入 admin names。
+不得修改、drop 或 migrate 無關的 LiteLLM tables。`POSTGRES_LITELLM_*` 是專案唯一
+讀取的 PostgreSQL identity，僅供日常 DML。DDL 管理連線由 Human Operator 在
+DBeaver 內管理，專案不讀取其名稱或 credential。
 
 ## Qdrant
 

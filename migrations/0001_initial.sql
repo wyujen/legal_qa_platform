@@ -1,7 +1,18 @@
+-- migration-version: 0001_initial.sql
 -- legal_qa_platform baseline schema.
 -- PostgreSQL is the source of truth for identities, current legal text,
 -- synchronization state, QA runs, conversations, and feedback. Vectors are
 -- intentionally absent: they live in Qdrant.
+-- Execute this entire file with DBeaver's "Execute SQL Script" action. The
+-- transaction records migration history only after every schema statement has
+-- succeeded. This file intentionally contains no role, user, database, grant,
+-- or revoke statement; privileges remain a Human Operator responsibility.
+
+BEGIN;
+
+SELECT pg_advisory_xact_lock(
+    hashtextextended('legal_qa_platform:migrations', 0)
+);
 
 CREATE SCHEMA IF NOT EXISTS legal_qa;
 
@@ -251,3 +262,11 @@ CREATE TABLE IF NOT EXISTS legal_qa.feedback (
 
 CREATE INDEX IF NOT EXISTS feedback_query_idx
     ON legal_qa.feedback (query_id, created_at DESC);
+
+-- Keep this as the final statement before COMMIT. A failed statement above
+-- aborts the transaction, so an incomplete migration is never recorded.
+INSERT INTO legal_qa.schema_migrations (version)
+VALUES ('0001_initial.sql')
+ON CONFLICT (version) DO NOTHING;
+
+COMMIT;

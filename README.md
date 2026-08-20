@@ -29,23 +29,25 @@ Domain/API contract變更時，以`python scripts/export_schemas.py`更新checke
 `schemas/`，再重跑上述gate。
 
 Live operation 只讀目前 process environment 中的
-[allowlisted configuration contract](docs/configuration.md)。它分為 13 個 application runtime
-names，以及只供顯式 one-shot migration 使用的 3 個 `POSTGRES_ADMIN_*`
-names。Application 不載入 dotenv；不要把credential 放入 command line、
-repository 或測試輸出。
+[allowlisted configuration contract](docs/configuration.md)，共 13 個 application
+runtime names。Application 不載入 dotenv；不要把credential 放入 command line、
+repository 或測試輸出。專案不讀取 database administrator credential。
 
-Human Operator 先在只限 migration 的 process 注入 PostgreSQL host/port、
-3 個 admin names，以及 runtime `USER`/`DATABASE` grant metadata，再執行：
+建立 application schema 前，先離線驗證 repository SQL：
 
 ```powershell
 python scripts/migrate.py
 ```
 
-Migration 只在 `POSTGRES_ADMIN_DATABASE` 與 `POSTGRES_LITELLM_DATABASE` 相同時
-進行，以 admin identity 建立 `legal_qa` schema/tables，並將 database
-connect、日常 DML 與 sequence/schema usage 授予既有的
-`POSTGRES_LITELLM_USER`。它不建立或修改 role/database。完成後，
-runtime-only process 只注入 13 個 runtime names 再執行：
+這個命令只驗證並列出 DBeaver handoff，不連線、也不套用 database migration。
+Human Operator 在 DBeaver 以既有管理連線選定正確 database，開啟
+`migrations/0001_initial.sql`，使用 **Execute SQL Script** 執行整份檔案；看到
+`COMMIT` 後再執行 `migrations/checks/0001_initial_readonly.sql`，所有 `passed`
+必須為 `true`。SQL 不含 role/user/database 或 grant；runtime identity 的最小權限
+由 Human Operator 在 DBeaver 權限介面設定。完整步驟見
+[database guide](docs/database.md#dbeaver-manual-ddl-workflow)。
+
+完成 DDL 與權限設定後，在 runtime process 注入 13 個 runtime names 再執行：
 
 ```powershell
 python scripts/smoke_test.py --phase dependencies
@@ -59,10 +61,10 @@ LiteLLM readiness、embedding 與 structured chat；它會明確略過尚待 boo
 published snapshot 與 Qdrant collection。`full` 是預設值，資料同步後仍會嚴格驗證
 這兩項資料契約。
 
-本機若同時有 internal/external host，但只能連 external/public family，migration、
-smoke、sync 與 API command 都可明確使用 `--endpoint-scope public`。這個 option
-只選擇已文件化的 endpoint family，不接受 URL 或 credential，也不修改 process
-environment。
+本機若同時有 internal/external host，但只能連 external/public family，smoke、sync
+與 API command 都可明確使用 `--endpoint-scope public`。這個 option只選擇已文件化
+的 endpoint family，不接受 URL 或 credential，也不修改 process environment。
+離線 migration validator 沒有 endpoint option。
 
 `full-snapshot` 僅適用完整權威資料；一般修補使用
 `python scripts/sync_laws.py --mode partial`。`GET /health` 是 process liveness；
@@ -87,25 +89,13 @@ Docker image 只包含 application；external services 與真實 deployment valu
 
 ```powershell
 docker compose build
-docker run --rm --init `
-  --env POSTGRES_EXTERNAL_HOST `
-  --env POSTGRES_INTERNAL_HOST `
-  --env POSTGRES_PORT `
-  --env POSTGRES_ADMIN_USER `
-  --env POSTGRES_ADMIN_PASSWORD `
-  --env POSTGRES_ADMIN_DATABASE `
-  --env POSTGRES_LITELLM_USER `
-  --env POSTGRES_LITELLM_DATABASE `
-  legal_qa_platform:local python scripts/migrate.py
 docker compose run --rm api python scripts/sync_laws.py --mode full-snapshot
 docker compose up --detach
 ```
 
-`--env NAME` 只把 Human Operator 已注入目前 process 的必要名稱交給
-one-shot container；不要改成 `--env NAME=value`。這個命令刻意不傳
-runtime PostgreSQL password、Qdrant 或 LiteLLM credential。正常 Compose API runtime
-不引用 admin names。One-shot migration/sync不會隨API startup自動執行，時機與
-`full-snapshot`適用性由 Human Operator確認。
+Database DDL 不由 container 或 API startup 自動執行；Human Operator 先完成上述
+DBeaver workflow。Compose 只接收 13-name runtime contract。同步時機與
+`full-snapshot`適用性仍由 Human Operator確認。
 
 ## Architecture and safety
 

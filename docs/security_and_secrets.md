@@ -1,17 +1,18 @@
 # Security and secrets
 
-本專案的安全邊界是 process environment。Human Operator 負責在 process 啟動前
-準備該 process 最小必要的 credential；應用程式與 one-shot tooling 只知道
+本專案 runtime 的安全邊界是 process environment。Human Operator 負責在 process 啟動前
+準備該 process 最小必要的 credential；應用程式只知道
 [configuration contract](configuration.md) 的名稱，不知道值的保存位置、載入方式
-或平台的管理流程。
+或平台的管理流程。Database DDL 由 Human Operator 透過既有 DBeaver 管理連線手動
+執行；專案不讀取或要求該連線的 credential。
 
 ## 必須維持的邊界
 
 - 不搜尋、讀取或推測 `.env`、credential 檔案、Secret 目錄、shell profile、
   credential store、載入 script 或 repository 外部的 Secret 管理資料。
 - 不要求 Human Operator 貼上 API key、password、token、private key、master key、
-  administrator credential、kubeconfig 或 Kubernetes Secret。顯式 migration 只能從
-  目前 process 讀取已文件化的 `POSTGRES_ADMIN_*` names，不知道值的來源。
+  administrator credential、kubeconfig 或 Kubernetes Secret。`scripts/migrate.py`
+  只驗證 repository SQL，不讀 environment、不連線 database。
 - 不 dump process environment、settings、request headers、cookies 或外部服務的
   原始 error response。
 - Smoke test 不接受 credential command-line flags 或 Secret file argument；只讀
@@ -36,14 +37,13 @@
 
 資料庫身分必須分離：
 
-- `POSTGRES_ADMIN_*` 只存在 Human Operator 顯式啟動的 one-shot migration
-  process，用於目標 database 內 `legal_qa` schema/table/sequence DDL 與 grants。
-- `POSTGRES_LITELLM_*` 是 normal runtime identity，只執行 `legal_qa` 的日常
-  DML、schema usage 與 sequence usage；不得具有或假設 administrator 權限。
-- Migration 連線前必須確認 admin/runtime database 名稱相同，不建立、
-  修改或刪除 role/database，也不觸碰無關的 LiteLLM 或其他 schema 物件。
-- API、sync、smoke、evaluation、load-test 與 UI processes 不得接收、讀取或
-  轉傳 `POSTGRES_ADMIN_*`。
+- `POSTGRES_LITELLM_*` 是專案唯一讀取的 PostgreSQL identity，只執行 `legal_qa`
+  的日常 DML、schema usage 與 sequence usage；不得具有或假設 administrator 權限。
+- Human Operator 的 DBeaver 管理連線與 credential 完全在專案外；repository SQL
+  不含 role/user/database 名稱、placeholder、grant 或 revoke。
+- Human Operator 透過 DBeaver 權限介面授予既有 runtime identity 固定 capability
+  allowlist；專案不建立、修改或授權 role/database，也不觸碰無關 schema。
+- API、sync、smoke、evaluation、load-test 與 UI 只接收 13-name runtime contract。
 
 ## Log、error 與 telemetry allowlist
 
@@ -80,12 +80,10 @@ response 失敗。Langfuse 不是 conversation 或 audit source of truth。
 - Compose 只轉交 Human Operator 已注入目前 process 的名稱；執行
   `docker compose config`、container inspect 或診斷工具前要確認不會顯示解析後的
   credential。
-- Compose API runtime 只引用 runtime names。Admin names 只能由獨立
-  `docker run` one-shot migration command 以 `--env NAME`、不含 value 的方式轉交，
-  且不得進入後續 API container。這個 container 不需要 runtime PostgreSQL
-  password、Qdrant 或 LiteLLM credential。
+- Compose API runtime 只引用 13 個 runtime names。DDL 不由 application container
+  或 startup hook 執行；Human Operator 在部署前完成 DBeaver manual workflow。
 - Kubernetes templates 沒有 Secret manifest，也沒有 namespace 真值。API
-  Deployment 只保留 runtime `secretKeyRef` placeholder，不引用 admin names；正式
+  Deployment 只保留 runtime `secretKeyRef` placeholder，不引用 administrator inputs；正式
   reference 與 provisioning 完全由 Human Operator 管理。
 - 不讀取、describe、decode 或匯出 cluster Secret，也不尋找 kubeconfig 或要求
   cluster-admin 權限。
@@ -114,8 +112,8 @@ Operator 依既有程序處置。不要把疑似值貼到 issue、commit、chat 
 交付前確認：
 
 - tracked files 沒有真實 credential 或 credential loader；
-- operator-only admin names 只存在 migration path，沒有出現在 API/runtime
-  composition、Compose service environment 或 Kubernetes API Deployment；
+- 專案 environment contract 沒有 administrator names，migration validator 不讀
+  environment 或建立 database connection；
 - error、logging、health 與 test output 有 allowlist／redaction 測試；
 - Docker image 與 Kubernetes templates 只有 references/placeholders；
 - live 測試的缺設定路徑只報名稱，不要求值；

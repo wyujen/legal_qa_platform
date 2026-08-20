@@ -25,36 +25,12 @@ dotenv、不尋找 credential 檔案，也不知道 Human Operator 如何準備�
 | `LITELLM_API_KEY` | 必填 | Secret | LiteLLM runtime credential，以 redacting type 保存 |
 
 這 13 個名稱是 API、sync、smoke、evaluation 與 load test 的完整 runtime
-contract。這些 process 不得接收下節的 admin names。
+contract，也是專案全部的 environment-variable allowlist。DDL 不屬於 environment
+contract：Human Operator 以自行管理的 DBeaver 連線手動執行 repository SQL，專案不
+讀取、要求或保存 database administrator credential。`scripts/migrate.py` 只做離線 SQL
+驗證，不讀取任何 environment variable，也不連線 PostgreSQL。
 
-## Operator-only migration：3 個額外名稱
-
-| 名稱 | 必填規則 | 敏感性 | 用途 |
-| --- | --- | --- | --- |
-| `POSTGRES_ADMIN_USER` | 只對 `scripts/migrate.py` 必填 | credential metadata | 顯式 one-shot migration 的 DDL identity |
-| `POSTGRES_ADMIN_PASSWORD` | 只對 `scripts/migrate.py` 必填 | Secret | Admin password，以 redacting type 保存，只在 migration driver 邊界 unwrap |
-| `POSTGRES_ADMIN_DATABASE` | 只對 `scripts/migrate.py` 必填 | credential metadata | Migration 目標 database；必須與 `POSTGRES_LITELLM_DATABASE` 相同 |
-
-Migration 仍使用既有 PostgreSQL host/port，並只需 runtime
-`POSTGRES_LITELLM_USER`/`POSTGRES_LITELLM_DATABASE` 作為 grant/target metadata；不使用
-runtime password、Qdrant 或 LiteLLM credential。安全 preflight 若發現兩個 database names
-不同，會在連線/變更前中止，只回報固定 category，不顯示 database
-或 identity 的實際名稱/值。Admin 與 runtime user 必須不同；runtime role 必須已存在、
-允許 login，且不可是 superuser 或具有 create-database/create-role、replication、
-bypass-RLS 等管理權限。Migration
-只建立/修改 `legal_qa` schema 物件並授予 runtime identity 必要的 schema、
-table DML、sequence 與 database connect 權限；不建立、修改或刪除
-role/database。
-
-16 個 allowlisted names 分成兩個互不繼承的 typed settings boundary：
-`RuntimeSettings` 只宣告 13 個 runtime names；`PostgresMigrationSettings` 只宣告
-PostgreSQL host/port、3 個 admin names 與 runtime `USER`/`DATABASE` grant metadata。
-因此 API/runtime 不會解析或保存 admin fields，migration 也不會解析 runtime
-PostgreSQL password、Qdrant 或 LiteLLM Secret。
-Human Operator 應在獨立的 operator process 執行 migration；完成後，API 與其他
-normal runtime processes 只注入上述 13 個 names。
-
-空字串會被正規化為未設定。名稱大小寫敏感；除上述 16 個 allowlisted
+空字串會被正規化為未設定。名稱大小寫敏感；除上述 13 個 allowlisted
 names 外，其他環境變數不會成為專案設定，也不可用來偷偷增加行為開關。
 
 ## Endpoint 選擇
@@ -71,8 +47,8 @@ Domain 與 service layer 不知道選到了哪一類 endpoint。URL 不得包含
 password、API key 或其他 credential；credential 由獨立的 Secret 欄位傳入
 adapter。
 
-`scripts/migrate.py`、`scripts/smoke_test.py`、`scripts/sync_laws.py` 與
-`python -m legal_qa_platform.api.server` 都支援
+`scripts/smoke_test.py`、`scripts/sync_laws.py` 與
+`python -m legal_qa_platform.api.server` 支援
 `--endpoint-scope auto|public|internal`。它們共用同一個 typed selector，只從
 上表已文件化的 fields 選擇 family，不接受 endpoint 或 credential 值，
 也不會改寫 process environment。`auto` 是預設值並保留 internal-first
@@ -88,8 +64,8 @@ ASGI import entry point，使用預設 `auto` 規則。
 
 目前 `compose.yaml` 以 external/public 欄位作為本機容器可達的必要入口，
 internal 欄位為選填；Kubernetes ConfigMap 範本則使用 internal 欄位。兩者都
-只引用相同的 13-name runtime contract；正常 API/UI deployment 不引用
-`POSTGRES_ADMIN_*`。
+只引用相同的 13-name runtime contract。離線 `scripts/migrate.py` 沒有 endpoint
+或 credential option；manual DDL workflow 見 [database guide](database.md#dbeaver-manual-ddl-workflow)。
 
 ## Repository-owned runtime assets
 

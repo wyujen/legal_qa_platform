@@ -1,4 +1,4 @@
-"""Secret-safe application and operator environment contract.
+"""Secret-safe application environment contract.
 
 This module deliberately does not load dotenv files or inspect the wider process
 environment. Pydantic reads only the explicitly declared variable names.
@@ -19,9 +19,6 @@ DOCUMENTED_ENVIRONMENT_VARIABLES = (
     "POSTGRES_EXTERNAL_HOST",
     "POSTGRES_INTERNAL_HOST",
     "POSTGRES_PORT",
-    "POSTGRES_ADMIN_USER",
-    "POSTGRES_ADMIN_PASSWORD",
-    "POSTGRES_ADMIN_DATABASE",
     "POSTGRES_LITELLM_USER",
     "POSTGRES_LITELLM_PASSWORD",
     "POSTGRES_LITELLM_DATABASE",
@@ -48,17 +45,6 @@ RUNTIME_ENVIRONMENT_VARIABLES = (
     "LITELLM_PUBLIC_URL",
     "LITELLM_INTERNAL_URL",
     "LITELLM_API_KEY",
-)
-
-POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES = (
-    "POSTGRES_EXTERNAL_HOST",
-    "POSTGRES_INTERNAL_HOST",
-    "POSTGRES_PORT",
-    "POSTGRES_ADMIN_USER",
-    "POSTGRES_ADMIN_PASSWORD",
-    "POSTGRES_ADMIN_DATABASE",
-    "POSTGRES_LITELLM_USER",
-    "POSTGRES_LITELLM_DATABASE",
 )
 
 
@@ -301,101 +287,3 @@ class RuntimeSettings(BaseSettings):
             "qdrant_credential_present": self.qdrant_api_key is not None,
             "litellm_credential_present": self.litellm_api_key is not None,
         }
-
-
-class PostgresMigrationSettings(BaseSettings):
-    """Operator-only PostgreSQL migration settings, isolated from runtime secrets."""
-
-    model_config = SettingsConfigDict(
-        env_file=None,
-        case_sensitive=True,
-        extra="ignore",
-        frozen=True,
-    )
-
-    environment_names: ClassVar[tuple[str, ...]] = (
-        POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES
-    )
-
-    postgres_external_host: str | None = Field(
-        default=None, validation_alias="POSTGRES_EXTERNAL_HOST"
-    )
-    postgres_internal_host: str | None = Field(
-        default=None, validation_alias="POSTGRES_INTERNAL_HOST"
-    )
-    postgres_port: int | None = Field(
-        default=None, validation_alias="POSTGRES_PORT", ge=1, le=65535
-    )
-    postgres_admin_user: str | None = Field(
-        default=None, validation_alias="POSTGRES_ADMIN_USER"
-    )
-    postgres_admin_password: SecretStr | None = Field(
-        default=None, validation_alias="POSTGRES_ADMIN_PASSWORD"
-    )
-    postgres_admin_database: str | None = Field(
-        default=None, validation_alias="POSTGRES_ADMIN_DATABASE"
-    )
-    postgres_user: str | None = Field(
-        default=None, validation_alias="POSTGRES_LITELLM_USER"
-    )
-    postgres_database: str | None = Field(
-        default=None, validation_alias="POSTGRES_LITELLM_DATABASE"
-    )
-
-    _normalize_blanks = field_validator("*", mode="before")(_blank_to_none)
-
-    @property
-    def postgres_host(self) -> str | None:
-        """Prefer the internal endpoint when both endpoint families exist."""
-
-        return self.postgres_internal_host or self.postgres_external_host
-
-    def missing_for_migration(self) -> tuple[str, ...]:
-        """Return required migration names without reading runtime-only secrets."""
-
-        missing: list[str] = []
-        if self.postgres_host is None:
-            missing.append("POSTGRES_INTERNAL_HOST or POSTGRES_EXTERNAL_HOST")
-        if self.postgres_port is None:
-            missing.append("POSTGRES_PORT")
-        if self.postgres_admin_user is None:
-            missing.append("POSTGRES_ADMIN_USER")
-        if self.postgres_admin_password is None:
-            missing.append("POSTGRES_ADMIN_PASSWORD")
-        if self.postgres_admin_database is None:
-            missing.append("POSTGRES_ADMIN_DATABASE")
-        if self.postgres_user is None:
-            missing.append("POSTGRES_LITELLM_USER")
-        if self.postgres_database is None:
-            missing.append("POSTGRES_LITELLM_DATABASE")
-        return tuple(missing)
-
-    def require_migration(self) -> ResolvedPostgresEndpoint:
-        """Validate the explicit operator-only PostgreSQL migration contract."""
-
-        _raise_missing(self.missing_for_migration())
-        assert self.postgres_host is not None
-        assert self.postgres_port is not None
-        assert self.postgres_admin_user is not None
-        assert self.postgres_admin_database is not None
-        assert self.postgres_user is not None
-        assert self.postgres_database is not None
-        if not _valid_postgres_host(self.postgres_host):
-            raise ConfigurationError(
-                "Invalid endpoint environment variable: "
-                "POSTGRES_INTERNAL_HOST or POSTGRES_EXTERNAL_HOST"
-            )
-        if self.postgres_admin_database != self.postgres_database:
-            raise ConfigurationError(
-                "POSTGRES_ADMIN_DATABASE must match "
-                "POSTGRES_LITELLM_DATABASE for operator migrations"
-            )
-        if self.postgres_admin_user == self.postgres_user:
-            raise ConfigurationError(
-                "POSTGRES_ADMIN_USER must differ from "
-                "POSTGRES_LITELLM_USER for operator migrations"
-            )
-        return ResolvedPostgresEndpoint(
-            host=self.postgres_host,
-            port=self.postgres_port,
-        )

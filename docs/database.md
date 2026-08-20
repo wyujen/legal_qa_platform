@@ -8,21 +8,54 @@ PostgreSQL 是 application data 的 source of truth：法規 identity/current te
 non-destructive by default，只建立/修改此 schema 的物件，也不得觸碰
 既有 LiteLLM tables。
 
-Baseline migration 是 `migrations/0001_initial.sql`，由 `python scripts/migrate.py`
-套用。它是顯式 one-shot operator command，以 `POSTGRES_ADMIN_*` identity
-執行 DDL；API、sync、smoke、evaluation 與 load test 不讀取這組名稱。
+Baseline migration 是 `migrations/0001_initial.sql`。`python scripts/migrate.py`
+只是離線 bundle validator 與 DBeaver handoff；它不讀 environment、不連線，也不會
+套用 migration。Human Operator 使用已自行管理的 DBeaver 連線執行 checked-in SQL。
 
-Migration 連線前必須驗證 `POSTGRES_ADMIN_DATABASE` 與
-`POSTGRES_LITELLM_DATABASE` 相同，且不在 error/log 中顯示兩者名稱或值。
-它不建立或修改 role/database；目標 database 與 runtime role 都必須已由 Human
-Operator 準備。Admin/runtime user 必須不同，runtime role 必須允許 login；migration
-會拒絕 role 本身具有 superuser、create-database/create-role、replication 或
-bypass-RLS 等管理屬性。Human Operator 另須確保 role membership、database/schema
-ownership 或既有 grant 沒有間接賦予 DDL 管理能力。完成 schema/table/sequence DDL
-後，migration 依固定 table allowlist 授予既有 `POSTGRES_LITELLM_USER`：可變 application
-tables 使用 `SELECT/INSERT/UPDATE`、append-only tables 使用 `SELECT/INSERT`、sequence
-只授予 `USAGE`；runtime 對 `schema_migrations` 無權限，也不取得 `DELETE` 或 default
-privileges。
+`0001_initial.sql` 以 `BEGIN`/`COMMIT` 包住整份 DDL，採用 transaction-scoped advisory
+lock，所有 schema objects 與 seed row 都是 repeatable forms。Migration version insert
+固定在最後一個 statement；前面任一 statement 失敗時 transaction 不會寫入
+`schema_migrations`。SQL 不含 role/user/database、placeholder、`GRANT` 或 `REVOKE`，
+不會觸碰無關的 LiteLLM objects。
+
+## DBeaver manual DDL workflow
+
+1. 從 repository root 執行 `python scripts/migrate.py`。只接受
+   `[PASS] offline migration bundle validated ... database_unchanged=true`；這一步不代表
+   database 已套用。
+2. 在 DBeaver 開啟 Human Operator 已建立的 PostgreSQL 管理連線。於 Database
+   Navigator 與 SQL Editor toolbar 確認 active connection/catalog 是預定 application
+   database；專案不提供或推測其名稱。
+3. 使用 **SQL Editor → Open SQL Script** 開啟 repository 的
+   `migrations/0001_initial.sql`，不要複製到其他未版本化檔案。
+4. 使用 **Execute SQL Script** 執行整份檔案（DBeaver 預設通常為 `Alt+X`）；不要只用
+   Execute SQL Statement/選取片段執行。
+5. 確認執行沒有 error 且 transaction 到達 `COMMIT`。若失敗，先修正權限或目標選擇，
+   再重跑同一份完整 SQL；不要手動插入 migration history。
+6. Refresh `legal_qa` schema，開啟
+   `migrations/checks/0001_initial_readonly.sql`，同樣以 Execute SQL Script 執行。
+   這份 post-check 只讀 catalog/application tables；每個回傳 row 的 `passed` 都必須是
+   `true`。
+7. 以 DBeaver 的 role/object **Properties → Permissions/Privileges**（或平台既有 DBA
+   管理流程）將下表能力授予預先存在的 runtime identity。不要把 identity 名稱寫入
+   repository SQL。
+8. 改用 runtime process 執行 `python scripts/smoke_test.py --phase dependencies`；通過後
+   才執行 initial full sync。
+
+Runtime identity 的 capability allowlist：
+
+| Scope | Required capability |
+| --- | --- |
+| Target database | `CONNECT` |
+| `legal_qa` schema | `USAGE`，沒有 `CREATE` |
+| `collection_runs`, `legal_documents`, `provision_identity_ledger`, `legal_provisions`, `conversations`, `qa_runs` | `SELECT`, `INSERT`, `UPDATE` |
+| `legal_provision_versions`, `collection_run_items`, `messages`, `qa_retrievals`, `feedback` | `SELECT`, `INSERT` |
+| `legal_qa` sequences | `USAGE` only |
+| `schema_migrations` | 無 runtime privilege |
+
+不要授予 runtime identity `DELETE`、`TRUNCATE`、DDL、role/database administration、
+schema ownership 或 default privileges。DBeaver 權限頁名稱可能依版本略有不同；能力
+邊界以上表為準。專案不自動建立、修改或授權 identity。
 
 ## Table map
 
@@ -54,10 +87,9 @@ privileges。
 Settings 分開 host/port/user/password/database並使用 redacting type保存密碼；DSN只在 PostgreSQL adapter邊界組合。禁止 log DSN、connection kwargs或database exception全文，因其可能含 credential/query values。Pool應有 bounded size、connect/query timeout與健康檢查；負載測試需區分 pool wait和 SQL latency。
 
 Development/server分別使用 external/internal host，但同一 code path優先
-internal。`POSTGRES_ADMIN_*` 僅供 one-shot migration DDL；
-`POSTGRES_LITELLM_*` 是 runtime identity，只擁有 `legal_qa` 所需 DML、schema
-usage 與 sequence usage。命名來源不改變權限邊界，runtime identity 不是
-administrator。Normal runtime process 不得收到 admin credential。
+internal。`POSTGRES_LITELLM_*` 是唯一由專案讀取的 PostgreSQL runtime identity，
+只擁有 `legal_qa` 所需 DML、schema usage 與 sequence usage。DDL 使用 Human Operator
+既有的 DBeaver 管理連線；專案不知道、讀取或保存該連線的 credential。
 
 ## Transactions 與 cross-store consistency
 
@@ -72,7 +104,9 @@ Conversation、question、answer、feedback可能含個資。正式retention、d
 ## Verification
 
 - Migration重跑不改變既有資料，schema version正確。
-- Admin/runtime database mismatch 在連線前中止；測試與輸出不顯示值。
+- Offline validator確認transaction envelope、連續version、repeatable DDL/seed、最後才
+  寫 migration history，並拒絕role/database/grant/destructive/placeholder SQL。
+- DBeaver read-only post-check 的每個 `passed` row 都是 `true`。
 - Runtime identity 可執行必要 CONNECT/schema usage/DML/sequence operation，
   但無 DDL 或其他 schema 權限。
 - Constraints拒絕stable ID重綁、非法status/role/rating與空正文。

@@ -1,4 +1,4 @@
-"""Pure endpoint-family selection for operator and runtime commands.
+"""Pure endpoint-family selection for runtime commands.
 
 The selector only clears fields on an immutable settings copy.  It never reads
 or mutates the process environment and never returns endpoint values in status
@@ -8,9 +8,9 @@ metadata.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, cast, overload
+from typing import Literal, cast
 
-from .settings import PostgresMigrationSettings, RuntimeSettings
+from .settings import RuntimeSettings
 
 EndpointScope = Literal["auto", "public", "internal"]
 EndpointFamily = Literal["external", "public", "internal", "missing"]
@@ -31,52 +31,33 @@ class RuntimeEndpointFamilies:
     litellm: EndpointFamily
 
 
-@overload
 def select_endpoint_scope(
     settings: RuntimeSettings,
     scope: EndpointScope,
-) -> RuntimeSettings: ...
-
-
-@overload
-def select_endpoint_scope(
-    settings: PostgresMigrationSettings,
-    scope: EndpointScope,
-) -> PostgresMigrationSettings: ...
-
-
-def select_endpoint_scope(
-    settings: RuntimeSettings | PostgresMigrationSettings,
-    scope: EndpointScope,
-) -> RuntimeSettings | PostgresMigrationSettings:
-    """Select documented endpoint fields without mutating environment state."""
+) -> RuntimeSettings:
+    """Select documented runtime endpoints without mutating environment state."""
 
     if scope not in ENDPOINT_SCOPE_CHOICES:
         raise ValueError("Unsupported endpoint scope.")
     if scope == "auto":
         return settings
 
-    if isinstance(settings, RuntimeSettings):
-        if scope == "public":
-            return settings.model_copy(
-                update={
-                    "postgres_internal_host": None,
-                    "qdrant_internal_http_url": None,
-                    "qdrant_internal_grpc_endpoint": None,
-                    "litellm_internal_url": None,
-                }
-            )
+    if scope == "public":
         return settings.model_copy(
             update={
-                "postgres_external_host": None,
-                "qdrant_public_url": None,
-                "litellm_public_url": None,
+                "postgres_internal_host": None,
+                "qdrant_internal_http_url": None,
+                "qdrant_internal_grpc_endpoint": None,
+                "litellm_internal_url": None,
             }
         )
-
-    if scope == "public":
-        return settings.model_copy(update={"postgres_internal_host": None})
-    return settings.model_copy(update={"postgres_external_host": None})
+    return settings.model_copy(
+        update={
+            "postgres_external_host": None,
+            "qdrant_public_url": None,
+            "litellm_public_url": None,
+        }
+    )
 
 
 def runtime_endpoint_families(settings: RuntimeSettings) -> RuntimeEndpointFamilies:
@@ -91,7 +72,7 @@ def runtime_endpoint_families(settings: RuntimeSettings) -> RuntimeEndpointFamil
 
 
 def postgres_endpoint_family(
-    settings: RuntimeSettings | PostgresMigrationSettings,
+    settings: RuntimeSettings,
 ) -> EndpointFamily:
     """Return only the selected PostgreSQL family label."""
 
@@ -109,15 +90,6 @@ def missing_for_runtime_scope(
     """Return precise variable names for explicitly selected endpoint families."""
 
     return _scope_missing_names(settings.missing_for_runtime(), scope)
-
-
-def missing_for_migration_scope(
-    settings: PostgresMigrationSettings,
-    scope: EndpointScope,
-) -> tuple[str, ...]:
-    """Return precise PostgreSQL names for an explicit migration scope."""
-
-    return _scope_missing_names(settings.missing_for_migration(), scope)
 
 
 def _scope_missing_names(
@@ -150,7 +122,6 @@ __all__ = [
     "ENDPOINT_SCOPE_CHOICES",
     "EndpointScope",
     "RuntimeEndpointFamilies",
-    "missing_for_migration_scope",
     "missing_for_runtime_scope",
     "postgres_endpoint_family",
     "runtime_endpoint_families",

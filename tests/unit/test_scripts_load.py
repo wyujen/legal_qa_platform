@@ -224,7 +224,7 @@ async def test_load_test_http_client_ignores_undocumented_environment(
     assert captured["trust_env"] is False
 
 
-def test_missing_runtime_output_never_prints_present_secret(
+def test_offline_migration_handoff_does_not_read_or_print_runtime_secret(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -236,6 +236,7 @@ def test_missing_runtime_output_never_prints_present_secret(
     exit_code = migrate.main([])
     output = capsys.readouterr().out
 
-    assert exit_code == 2
-    assert "POSTGRES_PORT" in output
+    assert exit_code == 0
+    assert "database_unchanged=true" in output
+    assert "POSTGRES_" not in output
     assert sentinel not in output

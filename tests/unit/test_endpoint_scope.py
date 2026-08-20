@@ -10,15 +10,12 @@ from pydantic import SecretStr
 from legal_qa_platform.api import server
 from legal_qa_platform.config import (
     ENDPOINT_SCOPE_CHOICES,
-    PostgresMigrationSettings,
     RuntimeSettings,
-    missing_for_migration_scope,
     missing_for_runtime_scope,
-    postgres_endpoint_family,
     runtime_endpoint_families,
     select_endpoint_scope,
 )
-from scripts import migrate, smoke_test, sync_laws
+from scripts import smoke_test, sync_laws
 
 
 def _runtime_settings() -> RuntimeSettings:
@@ -36,19 +33,6 @@ def _runtime_settings() -> RuntimeSettings:
         litellm_public_url="https://public-litellm.example.invalid",
         litellm_internal_url="http://internal-litellm.example.invalid",
         litellm_api_key=SecretStr("unit-test-litellm-key"),
-    )
-
-
-def _migration_settings() -> PostgresMigrationSettings:
-    return PostgresMigrationSettings.model_construct(
-        postgres_external_host="EXTERNAL_POSTGRES_MARKER",
-        postgres_internal_host="INTERNAL_POSTGRES_MARKER",
-        postgres_port=5432,
-        postgres_admin_user="migration-role",
-        postgres_admin_password=SecretStr("unit-test-admin-password"),
-        postgres_admin_database="application-database",
-        postgres_user="application-role",
-        postgres_database="application-database",
     )
 
 
@@ -72,18 +56,6 @@ def test_runtime_endpoint_scope_is_pure_and_auto_remains_internal_first() -> Non
     assert settings.postgres_external_host == "EXTERNAL_POSTGRES_MARKER"
 
 
-def test_migration_endpoint_scope_uses_the_same_selector() -> None:
-    settings = _migration_settings()
-
-    public = select_endpoint_scope(settings, "public")
-    internal = select_endpoint_scope(settings, "internal")
-
-    assert public.postgres_host == "EXTERNAL_POSTGRES_MARKER"
-    assert postgres_endpoint_family(public) == "external"
-    assert internal.postgres_host == "INTERNAL_POSTGRES_MARKER"
-    assert postgres_endpoint_family(internal) == "internal"
-
-
 def test_explicit_scope_reports_only_the_selected_missing_names() -> None:
     runtime = select_endpoint_scope(
         _runtime_settings().model_copy(
@@ -95,18 +67,10 @@ def test_explicit_scope_reports_only_the_selected_missing_names() -> None:
         ),
         "public",
     )
-    migration = select_endpoint_scope(
-        _migration_settings().model_copy(update={"postgres_external_host": None}),
-        "public",
-    )
-
     assert missing_for_runtime_scope(runtime, "public") == (
         "POSTGRES_EXTERNAL_HOST",
         "QDRANT_PUBLIC_URL",
         "LITELLM_PUBLIC_URL",
-    )
-    assert missing_for_migration_scope(migration, "public") == (
-        "POSTGRES_EXTERNAL_HOST",
     )
 
 
@@ -129,7 +93,6 @@ def test_selector_rejects_unknown_scope_defensively() -> None:
 
 def test_live_command_parsers_share_the_same_endpoint_scope_contract() -> None:
     parsers = (
-        migrate.build_parser(),
         smoke_test.build_parser(),
         sync_laws.build_parser(),
         server.build_parser(),

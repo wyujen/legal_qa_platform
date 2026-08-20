@@ -1,8 +1,9 @@
 """Shared, secret-safe helpers for repository scripts.
 
-This module never inspects the process environment. Runtime and one-shot
-migration settings remain owned by their separate typed settings models so
-commands cannot accidentally widen either environment-variable boundary.
+This module never inspects the process environment. Runtime settings remain
+owned by their typed settings model so commands cannot accidentally widen the
+environment-variable boundary. Manual migration validation reads repository
+SQL only and does not use this module for database configuration.
 """
 
 from __future__ import annotations
