@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: legal-qa-platform-ui
+  labels:
+    app.kubernetes.io/name: legal-qa-platform
+    app.kubernetes.io/component: ui
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: legal-qa-platform
+    app.kubernetes.io/component: ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

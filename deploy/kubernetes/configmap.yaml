@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: legal-qa-platform-config
+  labels:
+    app.kubernetes.io/name: legal-qa-platform
+    app.kubernetes.io/component: api
+data:
+  POSTGRES_INTERNAL_HOST: "<POSTGRES_INTERNAL_HOST>"
+  POSTGRES_PORT: "<POSTGRES_PORT>"
+  QDRANT_INTERNAL_HTTP_URL: "<QDRANT_INTERNAL_HTTP_URL>"
+  LITELLM_INTERNAL_URL: "<LITELLM_INTERNAL_URL>"

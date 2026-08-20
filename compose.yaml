@@ -1,0 +1,70 @@
+name: legal_qa_platform
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    image: legal_qa_platform:local
+    init: true
+    restart: unless-stopped
+    environment:
+      POSTGRES_EXTERNAL_HOST: ${POSTGRES_EXTERNAL_HOST:?POSTGRES_EXTERNAL_HOST is required}
+      POSTGRES_INTERNAL_HOST: ${POSTGRES_INTERNAL_HOST:-}
+      POSTGRES_PORT: ${POSTGRES_PORT:?POSTGRES_PORT is required}
+      POSTGRES_LITELLM_USER: ${POSTGRES_LITELLM_USER:?POSTGRES_LITELLM_USER is required}
+      POSTGRES_LITELLM_PASSWORD: ${POSTGRES_LITELLM_PASSWORD:?POSTGRES_LITELLM_PASSWORD is required}
+      POSTGRES_LITELLM_DATABASE: ${POSTGRES_LITELLM_DATABASE:?POSTGRES_LITELLM_DATABASE is required}
+      QDRANT_PUBLIC_URL: ${QDRANT_PUBLIC_URL:?QDRANT_PUBLIC_URL is required}
+      QDRANT_INTERNAL_HTTP_URL: ${QDRANT_INTERNAL_HTTP_URL:-}
+      QDRANT_INTERNAL_GRPC_ENDPOINT: ${QDRANT_INTERNAL_GRPC_ENDPOINT:-}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
+      LITELLM_PUBLIC_URL: ${LITELLM_PUBLIC_URL:?LITELLM_PUBLIC_URL is required}
+      LITELLM_INTERNAL_URL: ${LITELLM_INTERNAL_URL:-}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?LITELLM_API_KEY is required}
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  ui:
+    image: legal_qa_platform:local
+    init: true
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - streamlit
+      - run
+      - /app/src/legal_qa_platform/ui/streamlit_app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+      - --server.fileWatcherType=none
+      - --browser.gatherUsageStats=false
+      - --
+      - --api-base-url
+      - http://api:8000
+    ports:
+      - "127.0.0.1:8501:8501"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
