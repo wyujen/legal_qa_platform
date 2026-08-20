@@ -26,9 +26,12 @@ index definitions, and database-specific query details stay in the PostgreSQL
 adapter. UI, API, CLI, evaluation, and n8n must not implement alternate keyword
 or hybrid-ranking logic.
 
-Migrations create only objects in the application's database or schema. The
-baseline must not assume database administrator privileges or silently depend
-on an optional extension that the application cannot provision.
+Migrations create only objects in the application's database and `legal_qa`
+schema. They run as an explicit, operator-controlled one-shot command with the
+documented admin identity, then grant the existing runtime identity only the
+schema, table-DML, and sequence privileges it needs. API and other normal
+runtime processes never receive that admin identity. The baseline does not
+silently depend on an optional extension or provision roles/databases.
 
 ## Consequences
 
@@ -51,8 +54,10 @@ on an optional extension that the application cannot provision.
 ## Security implications
 
 All queries are parameterized; user text is never interpolated into SQL.
-Database access uses an application-scoped identity supplied through the
-runtime environment contract. Query diagnostics expose allowlisted timings,
-counts, and stable provision identifiers rather than raw credentials,
-connection strings, or question text. Optional database features must not
-prompt the application to request administrator credentials.
+Runtime database access uses an application-scoped identity supplied through
+the runtime environment contract. The separate migration identity is read only
+by the explicit one-shot command, after a target-database equality preflight.
+Query and migration diagnostics expose allowlisted timings, counts, categories,
+and stable provision identifiers rather than raw credentials, connection
+strings, database names, or question text. Optional database features must not
+prompt the runtime application to acquire administrator privileges.

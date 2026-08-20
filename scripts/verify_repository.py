@@ -21,6 +21,9 @@ from pydantic import SecretStr
 from legal_qa_platform import __version__
 from legal_qa_platform.config.settings import (
     DOCUMENTED_ENVIRONMENT_VARIABLES,
+    POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES,
+    RUNTIME_ENVIRONMENT_VARIABLES,
+    PostgresMigrationSettings,
     RuntimeSettings,
 )
 from legal_qa_platform.services.data_loader import load_data_bundle
@@ -55,6 +58,9 @@ EXPECTED_ENVIRONMENT_VARIABLES = (
     "POSTGRES_EXTERNAL_HOST",
     "POSTGRES_INTERNAL_HOST",
     "POSTGRES_PORT",
+    "POSTGRES_ADMIN_USER",
+    "POSTGRES_ADMIN_PASSWORD",
+    "POSTGRES_ADMIN_DATABASE",
     "POSTGRES_LITELLM_USER",
     "POSTGRES_LITELLM_PASSWORD",
     "POSTGRES_LITELLM_DATABASE",
@@ -65,6 +71,31 @@ EXPECTED_ENVIRONMENT_VARIABLES = (
     "LITELLM_PUBLIC_URL",
     "LITELLM_INTERNAL_URL",
     "LITELLM_API_KEY",
+)
+EXPECTED_RUNTIME_ENVIRONMENT_VARIABLES = (
+    "POSTGRES_EXTERNAL_HOST",
+    "POSTGRES_INTERNAL_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_LITELLM_USER",
+    "POSTGRES_LITELLM_PASSWORD",
+    "POSTGRES_LITELLM_DATABASE",
+    "QDRANT_PUBLIC_URL",
+    "QDRANT_INTERNAL_HTTP_URL",
+    "QDRANT_INTERNAL_GRPC_ENDPOINT",
+    "QDRANT_API_KEY",
+    "LITELLM_PUBLIC_URL",
+    "LITELLM_INTERNAL_URL",
+    "LITELLM_API_KEY",
+)
+EXPECTED_POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES = (
+    "POSTGRES_EXTERNAL_HOST",
+    "POSTGRES_INTERNAL_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_ADMIN_USER",
+    "POSTGRES_ADMIN_PASSWORD",
+    "POSTGRES_ADMIN_DATABASE",
+    "POSTGRES_LITELLM_USER",
+    "POSTGRES_LITELLM_DATABASE",
 )
 _SCAN_DIRECTORIES = (
     "src",
@@ -443,22 +474,41 @@ def _verify_environment_contract(root: Path) -> list[Finding]:
             )
         )
 
-    aliases = tuple(
+    runtime_aliases = tuple(
         str(field.validation_alias) for field in RuntimeSettings.model_fields.values()
     )
-    if aliases != EXPECTED_ENVIRONMENT_VARIABLES:
+    if (
+        tuple(RUNTIME_ENVIRONMENT_VARIABLES) != EXPECTED_RUNTIME_ENVIRONMENT_VARIABLES
+        or runtime_aliases != EXPECTED_RUNTIME_ENVIRONMENT_VARIABLES
+    ):
         findings.append(
             Finding(
-                "settings_environment_alias_contract",
+                "runtime_settings_environment_alias_contract",
                 "src/legal_qa_platform/config/settings.py",
             )
         )
-    for field_name in (
-        "postgres_password",
-        "qdrant_api_key",
-        "litellm_api_key",
+    migration_aliases = tuple(
+        str(field.validation_alias)
+        for field in PostgresMigrationSettings.model_fields.values()
+    )
+    if (
+        tuple(POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES)
+        != EXPECTED_POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES
+        or migration_aliases != EXPECTED_POSTGRES_MIGRATION_ENVIRONMENT_VARIABLES
     ):
-        annotation = RuntimeSettings.model_fields[field_name].annotation
+        findings.append(
+            Finding(
+                "migration_settings_environment_alias_contract",
+                "src/legal_qa_platform/config/settings.py",
+            )
+        )
+    for settings_type, field_name in (
+        (PostgresMigrationSettings, "postgres_admin_password"),
+        (RuntimeSettings, "postgres_password"),
+        (RuntimeSettings, "qdrant_api_key"),
+        (RuntimeSettings, "litellm_api_key"),
+    ):
+        annotation = settings_type.model_fields[field_name].annotation
         if annotation is not SecretStr and SecretStr not in get_args(annotation):
             findings.append(
                 Finding(
@@ -466,13 +516,14 @@ def _verify_environment_contract(root: Path) -> list[Finding]:
                     "src/legal_qa_platform/config/settings.py",
                 )
             )
-    if RuntimeSettings.model_config.get("env_file") is not None:
-        findings.append(
-            Finding(
-                "dotenv_loading_not_disabled",
-                "src/legal_qa_platform/config/settings.py",
+    for settings_type in (RuntimeSettings, PostgresMigrationSettings):
+        if settings_type.model_config.get("env_file") is not None:
+            findings.append(
+                Finding(
+                    "dotenv_loading_not_disabled",
+                    "src/legal_qa_platform/config/settings.py",
+                )
             )
-        )
 
     example = root / ".env.example"
     try:

@@ -1,8 +1,8 @@
 """Shared, secret-safe helpers for repository scripts.
 
-This module never inspects the process environment. Runtime settings remain
-owned by ``RuntimeSettings`` so commands cannot accidentally widen the
-documented environment-variable contract.
+This module never inspects the process environment. Runtime and one-shot
+migration settings remain owned by their separate typed settings models so
+commands cannot accidentally widen either environment-variable boundary.
 """
 
 from __future__ import annotations

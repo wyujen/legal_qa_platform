@@ -1,7 +1,7 @@
 # Security and secrets
 
 本專案的安全邊界是 process environment。Human Operator 負責在 process 啟動前
-準備 runtime credential；應用程式與開發工具只知道
+準備該 process 最小必要的 credential；應用程式與 one-shot tooling 只知道
 [configuration contract](configuration.md) 的名稱，不知道值的保存位置、載入方式
 或平台的管理流程。
 
@@ -10,7 +10,8 @@
 - 不搜尋、讀取或推測 `.env`、credential 檔案、Secret 目錄、shell profile、
   credential store、載入 script 或 repository 外部的 Secret 管理資料。
 - 不要求 Human Operator 貼上 API key、password、token、private key、master key、
-  administrator credential、kubeconfig 或 Kubernetes Secret。
+  administrator credential、kubeconfig 或 Kubernetes Secret。顯式 migration 只能從
+  目前 process 讀取已文件化的 `POSTGRES_ADMIN_*` names，不知道值的來源。
 - 不 dump process environment、settings、request headers、cookies 或外部服務的
   原始 error response。
 - Smoke test 不接受 credential command-line flags 或 Secret file argument；只讀
@@ -33,10 +34,16 @@
    `NO_PROXY`與TLS certificate environment不是目前allowlisted runtime contract，
    不得暗中成為連線或credential來源。
 
-資料庫身分只能視為 development-time existing credential，不得假設具有
-superuser、database administrator 或 cluster administrator 權限。Migration 只能
-操作 application-owned schema，不可修改或刪除無關的 LiteLLM table。權限不足時
-回報缺少的 operation，由 Human Operator 處理；不得要求提升 credential。
+資料庫身分必須分離：
+
+- `POSTGRES_ADMIN_*` 只存在 Human Operator 顯式啟動的 one-shot migration
+  process，用於目標 database 內 `legal_qa` schema/table/sequence DDL 與 grants。
+- `POSTGRES_LITELLM_*` 是 normal runtime identity，只執行 `legal_qa` 的日常
+  DML、schema usage 與 sequence usage；不得具有或假設 administrator 權限。
+- Migration 連線前必須確認 admin/runtime database 名稱相同，不建立、
+  修改或刪除 role/database，也不觸碰無關的 LiteLLM 或其他 schema 物件。
+- API、sync、smoke、evaluation、load-test 與 UI processes 不得接收、讀取或
+  轉傳 `POSTGRES_ADMIN_*`。
 
 ## Log、error 與 telemetry allowlist
 
@@ -73,9 +80,13 @@ response 失敗。Langfuse 不是 conversation 或 audit source of truth。
 - Compose 只轉交 Human Operator 已注入目前 process 的名稱；執行
   `docker compose config`、container inspect 或診斷工具前要確認不會顯示解析後的
   credential。
+- Compose API runtime 只引用 runtime names。Admin names 只能由獨立
+  `docker run` one-shot migration command 以 `--env NAME`、不含 value 的方式轉交，
+  且不得進入後續 API container。這個 container 不需要 runtime PostgreSQL
+  password、Qdrant 或 LiteLLM credential。
 - Kubernetes templates 沒有 Secret manifest，也沒有 namespace 真值。API
-  Deployment 只保留 `secretKeyRef` placeholder；正式 reference 與 provisioning
-  完全由 Human Operator 管理。
+  Deployment 只保留 runtime `secretKeyRef` placeholder，不引用 admin names；正式
+  reference 與 provisioning 完全由 Human Operator 管理。
 - 不讀取、describe、decode 或匯出 cluster Secret，也不尋找 kubeconfig 或要求
   cluster-admin 權限。
 - Container 以 non-root、drop capabilities、no-new-privileges 執行；Kubernetes
@@ -103,6 +114,8 @@ Operator 依既有程序處置。不要把疑似值貼到 issue、commit、chat 
 交付前確認：
 
 - tracked files 沒有真實 credential 或 credential loader；
+- operator-only admin names 只存在 migration path，沒有出現在 API/runtime
+  composition、Compose service environment 或 Kubernetes API Deployment；
 - error、logging、health 與 test output 有 allowlist／redaction 測試；
 - Docker image 與 Kubernetes templates 只有 references/placeholders；
 - live 測試的缺設定路徑只報名稱，不要求值；

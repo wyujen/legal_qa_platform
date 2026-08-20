@@ -29,15 +29,33 @@ Domain/API contract變更時，以`python scripts/export_schemas.py`更新checke
 `schemas/`，再重跑上述gate。
 
 Live operation 只讀目前 process environment 中的
-[13-name runtime contract](docs/configuration.md)。Application 不載入 dotenv；不要把
-credential 放入 command line、repository 或測試輸出。Human Operator 完成注入後：
+[allowlisted configuration contract](docs/configuration.md)。它分為 13 個 application runtime
+names，以及只供顯式 one-shot migration 使用的 3 個 `POSTGRES_ADMIN_*`
+names。Application 不載入 dotenv；不要把credential 放入 command line、
+repository 或測試輸出。
+
+Human Operator 先在只限 migration 的 process 注入 PostgreSQL host/port、
+3 個 admin names，以及 runtime `USER`/`DATABASE` grant metadata，再執行：
 
 ```powershell
 python scripts/migrate.py
+```
+
+Migration 只在 `POSTGRES_ADMIN_DATABASE` 與 `POSTGRES_LITELLM_DATABASE` 相同時
+進行，以 admin identity 建立 `legal_qa` schema/tables，並將 database
+connect、日常 DML 與 sequence/schema usage 授予既有的
+`POSTGRES_LITELLM_USER`。它不建立或修改 role/database。完成後，
+runtime-only process 只注入 13 個 runtime names 再執行：
+
+```powershell
 python scripts/sync_laws.py --mode full-snapshot
 python scripts/smoke_test.py
 python -m legal_qa_platform.api.server --host 0.0.0.0 --port 8000
 ```
+
+本機若同時有 internal/external host，但只能連 external，migration 可明確使用
+`python scripts/migrate.py --endpoint-scope public`。這個 option 只選擇已文件化的
+endpoint family，不接受 URL 或 credential。
 
 `full-snapshot` 僅適用完整權威資料；一般修補使用
 `python scripts/sync_laws.py --mode partial`。`GET /health` 是 process liveness；
@@ -62,13 +80,25 @@ Docker image 只包含 application；external services 與真實 deployment valu
 
 ```powershell
 docker compose build
-docker compose run --rm api python scripts/migrate.py
+docker run --rm --init `
+  --env POSTGRES_EXTERNAL_HOST `
+  --env POSTGRES_INTERNAL_HOST `
+  --env POSTGRES_PORT `
+  --env POSTGRES_ADMIN_USER `
+  --env POSTGRES_ADMIN_PASSWORD `
+  --env POSTGRES_ADMIN_DATABASE `
+  --env POSTGRES_LITELLM_USER `
+  --env POSTGRES_LITELLM_DATABASE `
+  legal_qa_platform:local python scripts/migrate.py
 docker compose run --rm api python scripts/sync_laws.py --mode full-snapshot
 docker compose up --detach
 ```
 
-One-shot migration/sync不會隨API startup自動執行，時機與`full-snapshot`適用性由
-Human Operator確認。
+`--env NAME` 只把 Human Operator 已注入目前 process 的必要名稱交給
+one-shot container；不要改成 `--env NAME=value`。這個命令刻意不傳
+runtime PostgreSQL password、Qdrant 或 LiteLLM credential。正常 Compose API runtime
+不引用 admin names。One-shot migration/sync不會隨API startup自動執行，時機與
+`full-snapshot`適用性由 Human Operator確認。
 
 ## Architecture and safety
 

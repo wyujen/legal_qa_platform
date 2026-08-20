@@ -235,14 +235,13 @@ class QaRunRepository(Protocol):
 
 class ApplicationRepository(
     RepositoryLifecycle,
-    MigrationRepository,
     LegalRepository,
     IngestionRepository,
     ConversationRepository,
     QaRunRepository,
     Protocol,
 ):
-    """Complete persistence boundary used by the composition root."""
+    """Runtime persistence boundary; operator migration is deliberately separate."""
 
 
 __all__ = [

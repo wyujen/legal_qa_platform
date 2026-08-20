@@ -26,7 +26,9 @@ error category、timeout/latency、embedding dimension、candidate count、stabl
 
 | 症狀 | 檢查 | 處理 |
 | --- | --- | --- |
-| 啟動列出 missing names | 對照 `docs/configuration.md` 的 13-name contract | 由 Human Operator 在 process 啟動前注入；不要貼值 |
+| API/smoke 列出 missing names | 對照 `docs/configuration.md` 的 13-name runtime contract | 由 Human Operator 在 process 啟動前注入；不要貼值 |
+| Migration 列出 missing names | 對照額外 3-name operator migration contract | 只在獨立 one-shot process 注入；API runtime 不引用 |
+| Migration database mismatch | Admin/runtime target 不同 | 連線前已停止；Human Operator 只核對注入，不貼名稱或值 |
 | 選到錯誤 endpoint 類型 | 查看 `safe_status()` 的 internal/public/missing 類別 | internal 欄位有值時會優先；修正 runtime injection，不改 domain logic |
 | Port validation error | 只確認型別與 1–65535 範圍 | 由 Human Operator 修正設定，不列印完整 settings |
 | Langfuse 沒有 trace | 目前 contract 未包含 Langfuse configuration | 預期使用 no-op；QA 應繼續，勿新增未核准 env knob |
@@ -59,15 +61,16 @@ Windows必須使用這個launcher，讓psycopg async在selector event loop執行
 | Error 類別 | 意義與安全處理 |
 | --- | --- |
 | `timeout` | 確認 endpoint 類型、port 與部署網路可達性；不要顯示 DSN |
-| `authentication_failed` | 只回報 authentication 類別；由 Human Operator 檢查注入，不要求 password |
-| `permission_denied` | Migration 只能要求 application-owned schema/table 權限；不得索取 admin credential |
-| `schema_missing` | 以 `python scripts/migrate.py` 執行 repeatable migration，再重跑 smoke |
+| `authentication_failed` | Smoke/API 只驗證 runtime identity；migration 只驗證 operator identity；由 Human Operator 核對對應 process 注入，不要求 password |
+| `permission_denied` | Migration 只使用已注入的 operator identity 建立 `legal_qa` 物件/grants；runtime identity 只需 DML/schema/sequence usage；不貼 credential |
+| `schema_missing` | 由獨立 operator process 以 `python scripts/migrate.py` 執行 repeatable migration，再用 runtime-only process 重跑 smoke |
 | `database_error` | 一般driver/database失敗；僅使用server與平台端安全診斷，不貼exception、endpoint或DSN |
 | `published_snapshot=false` | 先確認migration，再以正確full/partial mode完成同步；不要把running/failed run手動標成成功 |
 | keyword latency 高 | 查看 index/query plan 的非敏感摘要、pool wait 與 candidate count，不記錄 raw question |
 
-不得修改、drop 或 migrate 無關的 LiteLLM tables。現有資料庫身分不代表 production
-identity，也不代表 administrator 權限。
+不得修改、drop 或 migrate 無關的 LiteLLM tables。`POSTGRES_ADMIN_*` 只供
+one-shot DDL；`POSTGRES_LITELLM_*` 是日常 DML identity。正常 API、sync、smoke、
+evaluation 與 load-test process 不得帶入 admin names。
 
 ## Qdrant
 

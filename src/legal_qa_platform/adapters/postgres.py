@@ -15,14 +15,14 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, sql
 from psycopg import errors as psycopg_errors
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool, PoolTimeout
 from pydantic import SecretStr
 
-from legal_qa_platform.config import RuntimeSettings
+from legal_qa_platform.config import PostgresMigrationSettings, RuntimeSettings
 from legal_qa_platform.domain.legal import (
     LegalProvision,
     canonical_json_hash,
@@ -64,6 +64,24 @@ def _connection_config(settings: RuntimeSettings) -> _PostgresConnectionConfig:
         user=settings.postgres_user,
         password=settings.postgres_password,
         database=settings.postgres_database,
+    )
+
+
+def _admin_connection_config(
+    settings: PostgresMigrationSettings,
+) -> _PostgresConnectionConfig:
+    """Build the operator-only migration identity for the application database."""
+
+    endpoint = settings.require_migration()
+    assert settings.postgres_admin_user is not None
+    assert settings.postgres_admin_password is not None
+    assert settings.postgres_admin_database is not None
+    return _PostgresConnectionConfig(
+        host=endpoint.host,
+        port=endpoint.port,
+        user=settings.postgres_admin_user,
+        password=settings.postgres_admin_password,
+        database=settings.postgres_admin_database,
     )
 
 
@@ -132,6 +150,30 @@ def create_postgres_repository(settings: RuntimeSettings) -> PostgresRepository:
     return PostgresRepository(
         create_postgres_pool(settings),
         readiness_config=config,
+    )
+
+
+def create_postgres_migration_runner(
+    settings: PostgresMigrationSettings,
+) -> PostgresMigrationRunner:
+    """Compose an operator-only runner; application runtime never calls this."""
+
+    config = _admin_connection_config(settings)
+    assert settings.postgres_user is not None
+    _suppress_psycopg_pool_diagnostics()
+    pool: AsyncConnectionPool[Any] = AsyncConnectionPool(
+        conninfo="",
+        kwargs=_driver_kwargs(config),
+        min_size=1,
+        max_size=1,
+        timeout=float(_POSTGRES_TIMEOUT_SECONDS),
+        open=False,
+        name="legal_qa_platform_migration",
+    )
+    return PostgresMigrationRunner(
+        pool,
+        application_role=settings.postgres_user,
+        target_database=config.database,
     )
 
 
@@ -232,6 +274,192 @@ def _row_to_provision(row: Mapping[str, Any]) -> LegalProvision:
     )
 
 
+def _read_migrations(directory: Path) -> tuple[tuple[str, str], ...]:
+    """Read ordered SQL files while rejecting paths escaping the chosen directory."""
+
+    root = directory.resolve()
+    if not root.is_dir():
+        raise ValueError("Migration directory does not exist.")
+    migrations: list[tuple[str, str]] = []
+    for path in sorted(root.glob("*.sql")):
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Migration path leaves the migration directory.") from exc
+        if not resolved.is_file():
+            continue
+        migrations.append((path.name, resolved.read_text(encoding="utf-8")))
+    if not migrations:
+        raise ValueError("No migration files found.")
+    return tuple(migrations)
+
+
+def _validate_migration_preflight(row: Sequence[Any] | None) -> None:
+    """Reject unsafe target or role state before executing any repository DDL."""
+
+    if not row or len(row) != 4 or not bool(row[0]):
+        raise ExternalServiceError("postgresql", "target_database_mismatch")
+    if not bool(row[1]):
+        raise ExternalServiceError("postgresql", "runtime_role_missing")
+    if not bool(row[2]):
+        raise ExternalServiceError("postgresql", "runtime_role_login_disabled")
+    if bool(row[3]):
+        raise ExternalServiceError("postgresql", "runtime_role_overprivileged")
+
+
+def _runtime_grant_statements(
+    *,
+    target_database: str,
+    application_role: str,
+) -> tuple[sql.Composed, ...]:
+    """Return identifier-safe, schema-scoped runtime grants.
+
+    Existing grants are cleared before the fixed table allowlist is applied.
+    ``schema_migrations`` therefore remains administrator-only. There are no
+    default privileges: every future application table must be deliberately
+    classified here, while future migration metadata receives no runtime access.
+    """
+
+    database = sql.Identifier(target_database)
+    role = sql.Identifier(application_role)
+    return (
+        sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(database, role),
+        sql.SQL("GRANT USAGE ON SCHEMA legal_qa TO {}").format(role),
+        sql.SQL(
+            "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA legal_qa FROM {}"
+        ).format(role),
+        sql.SQL(
+            "REVOKE ALL PRIVILEGES ON TABLE legal_qa.schema_migrations FROM {}"
+        ).format(role),
+        sql.SQL(
+            "GRANT SELECT, INSERT, UPDATE ON TABLE "
+            "legal_qa.collection_runs, "
+            "legal_qa.legal_documents, "
+            "legal_qa.provision_identity_ledger, "
+            "legal_qa.legal_provisions, "
+            "legal_qa.conversations, "
+            "legal_qa.qa_runs TO {}"
+        ).format(role),
+        sql.SQL(
+            "GRANT SELECT, INSERT ON TABLE "
+            "legal_qa.legal_provision_versions, "
+            "legal_qa.collection_run_items, "
+            "legal_qa.messages, "
+            "legal_qa.qa_retrievals, "
+            "legal_qa.feedback TO {}"
+        ).format(role),
+        sql.SQL(
+            "REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA legal_qa FROM {}"
+        ).format(role),
+        sql.SQL("GRANT USAGE ON ALL SEQUENCES IN SCHEMA legal_qa TO {}").format(role),
+    )
+
+
+class PostgresMigrationRunner:
+    """Operator-only schema migrator using an isolated administrator pool.
+
+    It never creates, alters, or drops a database or role. The existing runtime
+    role is validated before DDL, then receives only schema-scoped DML and
+    sequence privileges. Application composition does not construct this type.
+    """
+
+    def __init__(
+        self,
+        pool: AsyncConnectionPool[Any],
+        *,
+        application_role: str,
+        target_database: str,
+    ) -> None:
+        self._pool = pool
+        self._application_role = application_role
+        self._target_database = target_database
+
+    async def open(self) -> None:
+        try:
+            await self._pool.open(wait=False)
+        except Exception as exc:
+            raise _safe_database_error(exc) from None
+
+    async def close(self) -> None:
+        await self._pool.close()
+
+    async def apply_migrations(self, directory: Path) -> tuple[str, ...]:
+        """Preflight, migrate, and grant privileges in one transaction."""
+
+        migrations = await asyncio.to_thread(_read_migrations, directory)
+        applied_now: list[str] = []
+        try:
+            async with self._pool.connection() as connection:
+                async with connection.transaction():
+                    async with connection.cursor() as cursor:
+                        await cursor.execute(
+                            """
+                            SELECT
+                                current_database() = %s,
+                                EXISTS (
+                                    SELECT 1 FROM pg_roles WHERE rolname = %s
+                                ),
+                                COALESCE((
+                                    SELECT rolcanlogin
+                                    FROM pg_roles
+                                    WHERE rolname = %s
+                                ), false),
+                                COALESCE((
+                                    SELECT rolsuper OR rolcreatedb OR rolcreaterole
+                                        OR rolreplication OR rolbypassrls
+                                    FROM pg_roles
+                                    WHERE rolname = %s
+                                ), false)
+                            """,
+                            (
+                                self._target_database,
+                                self._application_role,
+                                self._application_role,
+                                self._application_role,
+                            ),
+                        )
+                        _validate_migration_preflight(await cursor.fetchone())
+
+                        await cursor.execute("CREATE SCHEMA IF NOT EXISTS legal_qa")
+                        await cursor.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS legal_qa.schema_migrations (
+                                version text PRIMARY KEY,
+                                applied_at timestamptz NOT NULL DEFAULT now()
+                            )
+                            """
+                        )
+                        await cursor.execute(
+                            "SELECT version FROM legal_qa.schema_migrations"
+                        )
+                        applied = {row[0] for row in await cursor.fetchall()}
+                        for version, migration_sql in migrations:
+                            if version in applied:
+                                continue
+                            await cursor.execute(migration_sql, prepare=False)
+                            await cursor.execute(
+                                """
+                                INSERT INTO legal_qa.schema_migrations (version)
+                                VALUES (%s)
+                                ON CONFLICT (version) DO NOTHING
+                                """,
+                                (version,),
+                            )
+                            applied_now.append(version)
+
+                        for statement in _runtime_grant_statements(
+                            target_database=self._target_database,
+                            application_role=self._application_role,
+                        ):
+                            await cursor.execute(statement)
+        except ExternalServiceError:
+            raise
+        except Exception as exc:
+            raise _safe_database_error(exc) from None
+        return tuple(applied_now)
+
+
 class PostgresRepository:
     """Async repository; all public failures are classified and redacted."""
 
@@ -328,48 +556,6 @@ class PostgresRepository:
                     return bool(row and row[0])
         except Exception:
             return False
-
-    async def apply_migrations(self, directory: Path) -> tuple[str, ...]:
-        """Apply ordered SQL files transactionally and return newly applied names."""
-
-        files = await asyncio.to_thread(lambda: sorted(directory.glob("*.sql")))
-        if not files:
-            raise ValueError("No migration files found.")
-        applied_now: list[str] = []
-        try:
-            async with self._pool.connection() as connection:
-                async with connection.transaction():
-                    async with connection.cursor() as cursor:
-                        await cursor.execute("CREATE SCHEMA IF NOT EXISTS legal_qa")
-                        await cursor.execute(
-                            """
-                            CREATE TABLE IF NOT EXISTS legal_qa.schema_migrations (
-                                version text PRIMARY KEY,
-                                applied_at timestamptz NOT NULL DEFAULT now()
-                            )
-                            """
-                        )
-                        await cursor.execute(
-                            "SELECT version FROM legal_qa.schema_migrations"
-                        )
-                        applied = {row[0] for row in await cursor.fetchall()}
-                        for path in files:
-                            if path.name in applied:
-                                continue
-                            sql = path.read_text(encoding="utf-8")
-                            await cursor.execute(sql, prepare=False)
-                            await cursor.execute(
-                                """
-                                INSERT INTO legal_qa.schema_migrations (version)
-                                VALUES (%s)
-                                ON CONFLICT (version) DO NOTHING
-                                """,
-                                (path.name,),
-                            )
-                            applied_now.append(path.name)
-        except Exception as exc:
-            raise _safe_database_error(exc) from None
-        return tuple(applied_now)
 
     async def start_collection_run(
         self,
@@ -1369,7 +1555,9 @@ class PostgresRepository:
 
 
 __all__ = [
+    "PostgresMigrationRunner",
     "PostgresRepository",
+    "create_postgres_migration_runner",
     "create_postgres_pool",
     "create_postgres_repository",
 ]

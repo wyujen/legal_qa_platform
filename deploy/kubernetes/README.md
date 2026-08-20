@@ -34,6 +34,15 @@ Do not add a Secret manifest or real values to this directory. The application
 only consumes the resulting environment variables; it does not know how the
 Secret or deployment values were provisioned.
 
+The API Deployment intentionally references only the 13-name runtime contract.
+It must not receive `POSTGRES_ADMIN_USER`, `POSTGRES_ADMIN_PASSWORD`, or
+`POSTGRES_ADMIN_DATABASE`. Those names are restricted to an explicit one-shot
+migration process and are removed from scope before API, sync, smoke,
+evaluation, or load-test processes start. This baseline does not include a
+Kubernetes migration Job; if the platform uses one, the Human Operator creates
+it through an approved external deployment workflow with temporary admin
+references and without committing values or allowing API pods to inherit them.
+
 No namespace is declared. Namespace selection, image-pull credentials,
 service account/RBAC, network policy, ingress policy, and TLS provisioning are
 cluster decisions left to the Human Operator.

@@ -13,12 +13,13 @@
 - Never request, discover, read, display, print, log, commit, or persist real credentials.
 - Do not search for `.env` files, credential files, secret directories, shell profiles, credential stores, secret-loading scripts, or the human operator's secret-management process.
 - Never dump the environment, unredacted settings, request headers, authorization headers, API keys, passwords, salts, cookies, private keys, tokens, or credential-bearing connection strings.
-- Do not request administrator, superuser, master-key, kubeconfig, or cluster-admin credentials. Never read or decode Kubernetes Secret values.
+- Do not request administrator, superuser, master-key, kubeconfig, or cluster-admin credential values. The only approved database-administrator inputs are the documented `POSTGRES_ADMIN_USER`, `POSTGRES_ADMIN_PASSWORD`, and `POSTGRES_ADMIN_DATABASE` names, read from the current process by the explicit one-shot migration command.
 - Sensitive settings must use redacting types, stay outside domain models, and be unwrapped only at the adapter call that needs them.
 - If required variables already exist, tests may use them without revealing values or sources. If they do not exist, provide a safe command for the human operator; do not ask for credentials.
 - Smoke tests must accept credentials only from the current process environment and must not expose credential flags such as `--api-key`, `--password`, or `--secret-file`.
 - Docker and Kubernetes files contain only environment-variable references, `secretKeyRef` references, or explicit placeholders. Real deployment values, namespaces, and Secret provisioning belong to the human operator.
 - Logs, exceptions, traces, diagnostics, and test output must be allowlisted or redacted. Observability must never receive secrets.
+- Keep PostgreSQL identities separated: `POSTGRES_ADMIN_*` is operator-only DDL for explicit migration/bootstrap, while `POSTGRES_LITELLM_*` is the least-privilege application identity for runtime DML. API, sync, smoke, evaluation, load-test, UI, and normal deployment processes must never require or receive `POSTGRES_ADMIN_*`.
 
 ## Baseline architecture and behavior
 
@@ -35,6 +36,6 @@
 - Prefer small, typed modules with documented input, output, external dependency, configuration, failure mode, and test boundary.
 - Keep one implementation of retrieval, ranking, prompt, and validation behavior shared by CLI, API, UI, and evaluation.
 - Add or update unit tests with each core behavior. Keep live integration tests explicitly gated by the documented runtime-variable names and safe to skip.
-- Migrations and synchronization must be repeatable and non-destructive by default. Never alter unrelated LiteLLM tables or assume administrator privileges.
+- Migrations and synchronization must be repeatable and non-destructive by default. The migration command may use the documented operator-only admin identity solely in the matching target database and `legal_qa` schema, then grant the existing runtime identity only the required schema, table, and sequence privileges. It must not create, alter, or drop roles/databases or alter unrelated LiteLLM objects.
 - Record replaceable architecture choices and unresolved production policy in ADRs or documentation rather than hard-coding them.
 - Before handoff, run available unit, static, build, data-contract, independence, and secret-safety checks; report any live checks that could not run because runtime configuration was absent.

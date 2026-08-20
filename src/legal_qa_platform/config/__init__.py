@@ -1,5 +1,5 @@
-"""Runtime configuration loaded exclusively from the process environment."""
+"""Application and operator configuration from the process environment only."""
 
-from .settings import RuntimeSettings
+from .settings import PostgresMigrationSettings, RuntimeSettings
 
-__all__ = ["RuntimeSettings"]
+__all__ = ["PostgresMigrationSettings", "RuntimeSettings"]

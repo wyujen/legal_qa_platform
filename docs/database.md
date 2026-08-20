@@ -4,9 +4,25 @@ PostgreSQL 是 application data 的 source of truth：法規 identity/current te
 
 ## Schema ownership
 
-所有物件位於隔離的 `legal_qa` schema。Migration 必須 repeatable、non-destructive by default，只建立/修改此 schema 的物件；不得假設 superuser，也不得觸碰既有 LiteLLM tables。
+所有物件位於隔離的 `legal_qa` schema。Migration 必須 repeatable、
+non-destructive by default，只建立/修改此 schema 的物件，也不得觸碰
+既有 LiteLLM tables。
 
-Baseline migration 是 `migrations/0001_initial.sql`，由 `python scripts/migrate.py` 套用。若目前 application identity 無建 schema/物件權限，script 應回報所需權限/SQL action並停止，不要求 administrator credential。
+Baseline migration 是 `migrations/0001_initial.sql`，由 `python scripts/migrate.py`
+套用。它是顯式 one-shot operator command，以 `POSTGRES_ADMIN_*` identity
+執行 DDL；API、sync、smoke、evaluation 與 load test 不讀取這組名稱。
+
+Migration 連線前必須驗證 `POSTGRES_ADMIN_DATABASE` 與
+`POSTGRES_LITELLM_DATABASE` 相同，且不在 error/log 中顯示兩者名稱或值。
+它不建立或修改 role/database；目標 database 與 runtime role 都必須已由 Human
+Operator 準備。Admin/runtime user 必須不同，runtime role 必須允許 login；migration
+會拒絕 role 本身具有 superuser、create-database/create-role、replication 或
+bypass-RLS 等管理屬性。Human Operator 另須確保 role membership、database/schema
+ownership 或既有 grant 沒有間接賦予 DDL 管理能力。完成 schema/table/sequence DDL
+後，migration 依固定 table allowlist 授予既有 `POSTGRES_LITELLM_USER`：可變 application
+tables 使用 `SELECT/INSERT/UPDATE`、append-only tables 使用 `SELECT/INSERT`、sequence
+只授予 `USAGE`；runtime 對 `schema_migrations` 無權限，也不取得 `DELETE` 或 default
+privileges。
 
 ## Table map
 
@@ -37,7 +53,11 @@ Baseline migration 是 `migrations/0001_initial.sql`，由 `python scripts/migra
 
 Settings 分開 host/port/user/password/database並使用 redacting type保存密碼；DSN只在 PostgreSQL adapter邊界組合。禁止 log DSN、connection kwargs或database exception全文，因其可能含 credential/query values。Pool應有 bounded size、connect/query timeout與健康檢查；負載測試需區分 pool wait和 SQL latency。
 
-Development/server分別使用 external/internal host，但同一 code path優先 internal。現有 `POSTGRES_LITELLM_*` identity僅是開發期既有credential，不代表production identity或admin權限。
+Development/server分別使用 external/internal host，但同一 code path優先
+internal。`POSTGRES_ADMIN_*` 僅供 one-shot migration DDL；
+`POSTGRES_LITELLM_*` 是 runtime identity，只擁有 `legal_qa` 所需 DML、schema
+usage 與 sequence usage。命名來源不改變權限邊界，runtime identity 不是
+administrator。Normal runtime process 不得收到 admin credential。
 
 ## Transactions 與 cross-store consistency
 
@@ -52,6 +72,9 @@ Conversation、question、answer、feedback可能含個資。正式retention、d
 ## Verification
 
 - Migration重跑不改變既有資料，schema version正確。
+- Admin/runtime database mismatch 在連線前中止；測試與輸出不顯示值。
+- Runtime identity 可執行必要 CONNECT/schema usage/DML/sequence operation，
+  但無 DDL 或其他 schema 權限。
 - Constraints拒絕stable ID重綁、非法status/role/rating與空正文。
 - Repository unit/integration測current filter、deterministic order、keyword candidates與transactions。
 - Reconciliation測PostgreSQL current IDs/hash/generation和Qdrant points一致。
