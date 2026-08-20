@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "ContextItem": {
+      "additionalProperties": false,
+      "description": "A query-focused, bounded excerpt derived from one retrieval result.",
+      "properties": {
+        "article_no": {
+          "minLength": 1,
+          "title": "Article No",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "document_name": {
+          "minLength": 1,
+          "title": "Document Name",
+          "type": "string"
+        },
+        "embedding_input_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Embedding Input Hash",
+          "type": "string"
+        },
+        "excerpt": {
+          "minLength": 1,
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "excerpt_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "final_score": {
+          "title": "Final Score",
+          "type": "number"
+        },
+        "provision_id": {
+          "exclusiveMinimum": 0,
+          "title": "Provision Id",
+          "type": "integer"
+        },
+        "rank": {
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "record_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Record Hash",
+          "type": "string"
+        },
+        "source_url": {
+          "default": "",
+          "title": "Source Url",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provision_id",
+        "document_name",
+        "article_no",
+        "excerpt",
+        "excerpt_hash",
+        "content_hash",
+        "record_hash",
+        "embedding_input_hash",
+        "final_score",
+        "rank"
+      ],
+      "title": "ContextItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The complete RAG context for one normalized question.",
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/$defs/ContextItem"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "question": {
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    }
+  },
+  "required": [
+    "question"
+  ],
+  "title": "RagContext",
+  "type": "object"
+}

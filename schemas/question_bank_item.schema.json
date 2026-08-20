@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "description": "One validated offline evaluation case; never included in a live prompt.",
+  "properties": {
+    "article_no": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Article No",
+      "type": "string"
+    },
+    "document_name": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Document Name",
+      "type": "string"
+    },
+    "expected_answer": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Expected Answer",
+      "type": "string"
+    },
+    "expected_keywords": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Expected Keywords",
+      "type": "array"
+    },
+    "expected_provision_ids": {
+      "items": {
+        "type": "integer"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Expected Provision Ids",
+      "type": "array"
+    },
+    "question": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    },
+    "question_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Question Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "question_id",
+    "question",
+    "expected_answer",
+    "expected_keywords",
+    "expected_provision_ids",
+    "document_name",
+    "article_no"
+  ],
+  "title": "QuestionBankItem",
+  "type": "object"
+}

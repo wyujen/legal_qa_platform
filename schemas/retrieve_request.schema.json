@@ -1,0 +1,23 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    },
+    "profile": {
+      "default": "platform-baseline-v1",
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Profile",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "title": "RetrieveRequest",
+  "type": "object"
+}

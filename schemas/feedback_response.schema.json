@@ -1,0 +1,14 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "feedback_id": {
+      "title": "Feedback Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "feedback_id"
+  ],
+  "title": "FeedbackResponse",
+  "type": "object"
+}

@@ -1,0 +1,78 @@
+{
+  "$defs": {
+    "LLMCitation": {
+      "additionalProperties": false,
+      "description": "The only citation data the untrusted model is allowed to choose.",
+      "properties": {
+        "provision_id": {
+          "exclusiveMinimum": 0,
+          "title": "Provision Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provision_id"
+      ],
+      "title": "LLMCitation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Exact structured-output DTO accepted from the model gateway.",
+  "properties": {
+    "can_answer": {
+      "title": "Can Answer",
+      "type": "boolean"
+    },
+    "citations": {
+      "items": {
+        "$ref": "#/$defs/LLMCitation"
+      },
+      "title": "Citations",
+      "type": "array"
+    },
+    "conditions": {
+      "items": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Conditions",
+      "type": "array"
+    },
+    "exceptions": {
+      "items": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Exceptions",
+      "type": "array"
+    },
+    "missing_information": {
+      "items": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Missing Information",
+      "type": "array"
+    },
+    "summary": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "can_answer",
+    "summary",
+    "conditions",
+    "exceptions",
+    "missing_information",
+    "citations"
+  ],
+  "title": "LLMAnswer",
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "checks": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Checks",
+      "type": "object"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "checks"
+  ],
+  "title": "ReadinessResponse",
+  "type": "object"
+}

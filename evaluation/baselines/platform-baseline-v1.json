@@ -1,0 +1,30 @@
+{
+  "baseline_id": "platform-baseline-v1",
+  "application_version": "0.1.0",
+  "status": "unrun",
+  "reason": "Live runtime configuration is supplied by the Human Operator.",
+  "dataset": {
+    "question_count": 100,
+    "questions_sha256": "75926754fdbdd0baf0bebfd9f1dab1c6365c34b2af18aa15cb2107f3408026e9",
+    "provision_count": 2234,
+    "provisions_sha256": "523bb8fe135835dd3f0da65e49ac0f9fc367e6c6c295c39cc23ce2afc875834a",
+    "source_law_sha256": "4c19bcb99e7d65a87606e6f0886c5eacc1dd9d91948e01e001d74cb0083646db",
+    "collection_warnings_sha256": "02f1bbcad6935e364f1dd394e59e18b1e5cbdddd7eda991d2bae850b5f4692dd"
+  },
+  "profile": {
+    "name": "platform-baseline-v1",
+    "profile_sha256": "6903ce2787a3945e344bfee0419d5280874c93c8a64514278b5502c908d28b11",
+    "prompt_name": "legal_qa_platform-prompt-v1",
+    "embedding_model": "bge-m3",
+    "embedding_dimension": 1024,
+    "chat_model": "campus-qa",
+    "candidate_k": 50,
+    "top_k": 6,
+    "vector_weight": 0.65,
+    "keyword_weight": 0.35,
+    "min_score": 0.12,
+    "reranker_enabled": false
+  },
+  "metrics": null,
+  "run_command": "python scripts/evaluate.py"
+}

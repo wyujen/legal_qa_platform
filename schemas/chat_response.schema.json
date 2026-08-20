@@ -1,0 +1,273 @@
+{
+  "$defs": {
+    "Citation": {
+      "additionalProperties": false,
+      "description": "A model-selected ID enriched only from trusted local retrieval data.",
+      "properties": {
+        "article_no": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Article No",
+          "type": "string"
+        },
+        "document_name": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Document Name",
+          "type": "string"
+        },
+        "provision_id": {
+          "exclusiveMinimum": 0,
+          "title": "Provision Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provision_id",
+        "document_name",
+        "article_no"
+      ],
+      "title": "Citation",
+      "type": "object"
+    },
+    "LegalQaResponse": {
+      "additionalProperties": false,
+      "description": "Sanitized outward response suitable for API and UI serialization.",
+      "properties": {
+        "can_answer": {
+          "title": "Can Answer",
+          "type": "boolean"
+        },
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "conditions": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "exceptions": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Exceptions",
+          "type": "array"
+        },
+        "missing_information": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Missing Information",
+          "type": "array"
+        },
+        "notice": {
+          "default": "本回答僅供內部初步法規解析，不構成正式法律意見。",
+          "title": "Notice",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "can_answer",
+        "summary"
+      ],
+      "title": "LegalQaResponse",
+      "type": "object"
+    },
+    "RetrievalResult": {
+      "additionalProperties": false,
+      "description": "Locally enriched hybrid result returned by the application core.",
+      "properties": {
+        "article_no": {
+          "minLength": 1,
+          "title": "Article No",
+          "type": "string"
+        },
+        "content": {
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "document_name": {
+          "minLength": 1,
+          "title": "Document Name",
+          "type": "string"
+        },
+        "embedding_input_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Embedding Input Hash",
+          "type": "string"
+        },
+        "final_score": {
+          "title": "Final Score",
+          "type": "number"
+        },
+        "keyword_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Keyword Score",
+          "type": "number"
+        },
+        "provision_id": {
+          "exclusiveMinimum": 0,
+          "title": "Provision Id",
+          "type": "integer"
+        },
+        "rank": {
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "record_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Record Hash",
+          "type": "string"
+        },
+        "source_url": {
+          "default": "",
+          "title": "Source Url",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "vector_score": {
+          "title": "Vector Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "provision_id",
+        "document_name",
+        "article_no",
+        "content",
+        "content_hash",
+        "record_hash",
+        "embedding_input_hash",
+        "vector_score",
+        "keyword_score",
+        "final_score",
+        "rank"
+      ],
+      "title": "RetrievalResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Framework-neutral outward envelope for one QA application run.",
+  "properties": {
+    "conversation_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Conversation Id"
+    },
+    "duration_ms": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Duration Ms",
+      "type": "integer"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "normalized_question": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Normalized Question",
+      "type": "string"
+    },
+    "profile": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Profile",
+      "type": "string"
+    },
+    "query_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Query Id",
+      "type": "string"
+    },
+    "question": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    },
+    "response": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LegalQaResponse"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "retrieval_results": {
+      "items": {
+        "$ref": "#/$defs/RetrievalResult"
+      },
+      "title": "Retrieval Results",
+      "type": "array"
+    },
+    "stage_latencies_ms": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Stage Latencies Ms",
+      "type": "object"
+    }
+  },
+  "required": [
+    "query_id",
+    "question",
+    "normalized_question",
+    "profile"
+  ],
+  "title": "ChatResponse",
+  "type": "object"
+}

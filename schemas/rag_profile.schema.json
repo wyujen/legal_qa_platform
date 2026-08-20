@@ -1,0 +1,122 @@
+{
+  "additionalProperties": false,
+  "description": "All baseline retrieval/model choices that are safe to experiment with.",
+  "properties": {
+    "candidate_k": {
+      "default": 50,
+      "maximum": 1000,
+      "minimum": 1,
+      "title": "Candidate K",
+      "type": "integer"
+    },
+    "chat_max_tokens": {
+      "default": 1200,
+      "maximum": 100000,
+      "minimum": 1,
+      "title": "Chat Max Tokens",
+      "type": "integer"
+    },
+    "chat_model": {
+      "default": "campus-qa",
+      "minLength": 1,
+      "title": "Chat Model",
+      "type": "string"
+    },
+    "conversation_message_limit": {
+      "default": 6,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Conversation Message Limit",
+      "type": "integer"
+    },
+    "embedding_dimension": {
+      "default": 1024,
+      "maximum": 65536,
+      "minimum": 1,
+      "title": "Embedding Dimension",
+      "type": "integer"
+    },
+    "embedding_model": {
+      "default": "bge-m3",
+      "minLength": 1,
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "keyword_weight": {
+      "default": 0.35,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Keyword Weight",
+      "type": "number"
+    },
+    "max_context_chars": {
+      "default": 1500,
+      "maximum": 200000,
+      "minimum": 1,
+      "title": "Max Context Chars",
+      "type": "integer"
+    },
+    "min_score": {
+      "default": 0.12,
+      "maximum": 1.0,
+      "minimum": -1.0,
+      "title": "Min Score",
+      "type": "number"
+    },
+    "name": {
+      "default": "platform-baseline-v1",
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "primary_context_chars": {
+      "default": 600,
+      "maximum": 50000,
+      "minimum": 1,
+      "title": "Primary Context Chars",
+      "type": "integer"
+    },
+    "prompt_name": {
+      "default": "legal_qa_platform-prompt-v1",
+      "minLength": 1,
+      "title": "Prompt Name",
+      "type": "string"
+    },
+    "reranker_enabled": {
+      "default": false,
+      "title": "Reranker Enabled",
+      "type": "boolean"
+    },
+    "secondary_context_chars": {
+      "default": 180,
+      "maximum": 50000,
+      "minimum": 1,
+      "title": "Secondary Context Chars",
+      "type": "integer"
+    },
+    "top_k": {
+      "default": 6,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Top K",
+      "type": "integer"
+    },
+    "vector_collection": {
+      "default": "legal_provisions_bge_m3_v1",
+      "maxLength": 255,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Vector Collection",
+      "type": "string"
+    },
+    "vector_weight": {
+      "default": 0.65,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Vector Weight",
+      "type": "number"
+    }
+  },
+  "title": "RagProfile",
+  "type": "object"
+}

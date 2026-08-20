@@ -32,7 +32,7 @@ dev = [
 packages = ["src/legal_qa_platform"]
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-config --strict-markers"
+addopts = "-ra --strict-config --strict-markers -p no:cacheprovider"
 testpaths = ["tests"]
 markers = [
   "integration: requires operator-injected runtime environment variables",

@@ -1,0 +1,96 @@
+{
+  "additionalProperties": false,
+  "description": "One current legal provision, preserving the validated seed-data schema.",
+  "properties": {
+    "article_no": {
+      "minLength": 1,
+      "title": "Article No",
+      "type": "string"
+    },
+    "chapter_name": {
+      "default": "",
+      "title": "Chapter Name",
+      "type": "string"
+    },
+    "content": {
+      "minLength": 1,
+      "title": "Content",
+      "type": "string"
+    },
+    "document_name": {
+      "minLength": 1,
+      "title": "Document Name",
+      "type": "string"
+    },
+    "is_active": {
+      "default": true,
+      "title": "Is Active",
+      "type": "boolean"
+    },
+    "paragraph_no": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Paragraph No"
+    },
+    "provision_id": {
+      "exclusiveMinimum": 0,
+      "title": "Provision Id",
+      "type": "integer"
+    },
+    "search_text": {
+      "default": "",
+      "title": "Search Text",
+      "type": "string"
+    },
+    "section_name": {
+      "default": "",
+      "title": "Section Name",
+      "type": "string"
+    },
+    "sort_order": {
+      "exclusiveMinimum": 0,
+      "title": "Sort Order",
+      "type": "integer"
+    },
+    "source_url": {
+      "default": "",
+      "title": "Source Url",
+      "type": "string"
+    },
+    "subparagraph_no": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Subparagraph No"
+    },
+    "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provision_id",
+    "document_name",
+    "article_no",
+    "content",
+    "sort_order"
+  ],
+  "title": "LegalProvision",
+  "type": "object"
+}

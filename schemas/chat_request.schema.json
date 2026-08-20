@@ -1,0 +1,38 @@
+{
+  "additionalProperties": false,
+  "description": "Framework-neutral input contract for ``POST /api/v1/chat``.",
+  "properties": {
+    "conversation_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Conversation Id"
+    },
+    "message": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    },
+    "profile": {
+      "default": "platform-baseline-v1",
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Profile",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "title": "ChatRequest",
+  "type": "object"
+}

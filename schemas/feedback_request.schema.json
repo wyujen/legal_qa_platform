@@ -1,0 +1,70 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Category"
+    },
+    "comment": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Comment"
+    },
+    "conversation_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Conversation Id"
+    },
+    "query_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Query Id",
+      "type": "string"
+    },
+    "rating": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rating"
+    }
+  },
+  "required": [
+    "query_id"
+  ],
+  "title": "FeedbackRequest",
+  "type": "object"
+}

@@ -1,0 +1,19 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "title": "Category",
+      "type": "string"
+    },
+    "error": {
+      "title": "Error",
+      "type": "string"
+    }
+  },
+  "required": [
+    "error",
+    "category"
+  ],
+  "title": "ErrorResponse",
+  "type": "object"
+}
