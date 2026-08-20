@@ -48,14 +48,21 @@ connect、日常 DML 與 sequence/schema usage 授予既有的
 runtime-only process 只注入 13 個 runtime names 再執行：
 
 ```powershell
+python scripts/smoke_test.py --phase dependencies
 python scripts/sync_laws.py --mode full-snapshot
-python scripts/smoke_test.py
+python scripts/smoke_test.py --phase full
 python -m legal_qa_platform.api.server --host 0.0.0.0 --port 8000
 ```
 
-本機若同時有 internal/external host，但只能連 external，migration 可明確使用
-`python scripts/migrate.py --endpoint-scope public`。這個 option 只選擇已文件化的
-endpoint family，不接受 URL 或 credential。
+`dependencies` 可在資料同步前驗證 PostgreSQL schema、Qdrant service，以及
+LiteLLM readiness、embedding 與 structured chat；它會明確略過尚待 bootstrap 的
+published snapshot 與 Qdrant collection。`full` 是預設值，資料同步後仍會嚴格驗證
+這兩項資料契約。
+
+本機若同時有 internal/external host，但只能連 external/public family，migration、
+smoke、sync 與 API command 都可明確使用 `--endpoint-scope public`。這個 option
+只選擇已文件化的 endpoint family，不接受 URL 或 credential，也不修改 process
+environment。
 
 `full-snapshot` 僅適用完整權威資料；一般修補使用
 `python scripts/sync_laws.py --mode partial`。`GET /health` 是 process liveness；

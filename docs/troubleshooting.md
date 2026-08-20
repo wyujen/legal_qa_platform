@@ -77,7 +77,9 @@ evaluation 與 load-test process 不得帶入 admin names。
 | Error 類別 | 意義與安全處理 |
 | --- | --- |
 | 401/403 | 回報 status 與 service；由 Human Operator 檢查 runtime injection，不顯示 key/header |
-| timeout/unavailable | 檢查 public/internal endpoint 類型、network 與 Qdrant readiness |
+| `tls_error` | 僅代表 TLS/certificate 驗證類型失敗；由 Human Operator 檢查公開端點憑證鏈與主機名，不關閉 TLS 驗證 |
+| `dns_error` | 僅代表名稱解析類型失敗；檢查 endpoint 類型與執行環境 DNS，不顯示完整 endpoint |
+| `timeout` / `connection_error` | 檢查 public/internal endpoint 類型、port、network 與 Qdrant readiness |
 | `qdrant_collection=false`／collection missing | 確認 migration/sync sequence、profile collection與1024維Cosine contract；不要臨時改用 pgvector |
 | dimension mismatch | `bge-m3` 必須是 1024；停止寫入，檢查 model/collection contract |
 | provision 缺漏或 stale | 比對 PostgreSQL current state、`provision_id`、hash/model identity 與最新 sync run |
@@ -92,6 +94,9 @@ Changed provision 的舊 vector 不可繼續服務。只有確認輸入是完整
 | --- | --- |
 | 401/403 | 只記錄 status；由 Human Operator 檢查 injection，不顯示 Authorization header |
 | 429 | 分類為 RPM/TPM/parallel quota，採受控退避；不把它誤判為 FastAPI 容量 |
+| `tls_error` | 僅代表 TLS/certificate 驗證類型失敗；檢查憑證鏈與主機名，不關閉 TLS 驗證 |
+| `dns_error` | 僅代表名稱解析類型失敗；檢查 endpoint 類型與執行環境 DNS，不顯示完整 endpoint |
+| `connection_error` | 連線建立失敗且不屬於 TLS、DNS 或 timeout；檢查 port、routing 與 service readiness |
 | timeout | 分別記錄 embedding 或 generation stage latency，確認 gateway/model queue |
 | embedding dimension mismatch | 期待 1024；停止同步或回答，避免污染 Qdrant projection |
 | chat 500 | 確認 adapter request 有明確 `max_tokens`；不記錄 request/response body |

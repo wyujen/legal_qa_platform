@@ -88,11 +88,22 @@ python scripts/sync_laws.py --mode partial
 
 ## Live integration / smoke
 
-安全的統一入口：
+安全的統一入口預設執行完整檢查：
 
 ```powershell
 python scripts/smoke_test.py
 ```
+
+Migration 完成但資料尚未同步時，可先驗證可用的外部 dependencies：
+
+```powershell
+python scripts/smoke_test.py --phase dependencies
+```
+
+`dependencies` 仍驗證 PostgreSQL application schema、Qdrant service，以及
+LiteLLM readiness、`bge-m3` embedding 與 `campus-qa` structured chat；published
+snapshot 與 Qdrant collection 會輸出含 `phase=dependencies` 的 `[SKIP]`，不計入
+failure。`--phase full`（預設）則維持嚴格檢查，適合完成資料同步後執行。
 
 `auto`（預設）與正式應用共用 internal-first precedence。若同一個本機process已同時
 注入internal與public/external endpoints，但工作站只能到達後者，可明確執行：
@@ -106,7 +117,7 @@ smoke輸出會列出`internal`／`external`／`public` family，不列實際endp
 需要驗證internal endpoints時可使用`--endpoint-scope internal`。
 
 Smoke test 只讀目前 process environment，不能接受 API key、password 或 Secret
-file flags。它應分層確認：
+file flags。完整 phase 應分層確認：
 
 1. PostgreSQL 可連線、application schema存在，且目前profile有成功published snapshot；
 2. Qdrant readiness、collection contract 與 authenticated request；
@@ -114,7 +125,7 @@ file flags。它應分層確認：
 4. `bge-m3` embedding 回傳恰為 1024 dimensions；
 5. `campus-qa` chat request 明確包含 `max_tokens` 並取得可驗證 response。
 
-安全輸出只包含 `[PASS]`／`[FAIL]`、service、HTTP status、error category、latency、
+安全輸出只包含 `[PASS]`／`[FAIL]`／`[SKIP]`、service、HTTP status、error category、latency、
 model 與 dimension。不得包含 header、response body、DSN、URL credential、settings
 或 environment dump。缺少設定時，回報 unavailable names 並停止 live 部分；不要
 要求 Human Operator 提供值。

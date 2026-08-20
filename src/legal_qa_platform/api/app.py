@@ -20,6 +20,7 @@ from legal_qa_platform.api.schemas import (
     RetrieveRequest,
     RetrieveResponse,
 )
+from legal_qa_platform.config import RuntimeSettings
 from legal_qa_platform.container import ApplicationContainer
 from legal_qa_platform.domain.qa import ChatRequest, ChatResponse
 from legal_qa_platform.errors import (
@@ -44,11 +45,15 @@ def _container(request: Request) -> ApplicationContainer:
 def create_app(
     container: ApplicationContainer | None = None,
     *,
+    settings: RuntimeSettings | None = None,
     manage_lifecycle: bool = True,
 ) -> FastAPI:
+    if container is not None and settings is not None:
+        raise ValueError("Pass either container or settings, not both.")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        selected = container or ApplicationContainer.build()
+        selected = container or ApplicationContainer.build(settings=settings)
         if manage_lifecycle:
             await selected.open()
         app.state.container = selected

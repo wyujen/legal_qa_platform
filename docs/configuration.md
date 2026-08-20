@@ -71,9 +71,20 @@ Domain 與 service layer 不知道選到了哪一類 endpoint。URL 不得包含
 password、API key 或其他 credential；credential 由獨立的 Secret 欄位傳入
 adapter。
 
-`scripts/migrate.py` 另支援 `--endpoint-scope auto|public|internal`；這個 argument
-只從已文件化的 PostgreSQL host fields 選擇 family，不接受 endpoint 或
-credential 值。`auto` 保留 internal-first precedence。
+`scripts/migrate.py`、`scripts/smoke_test.py`、`scripts/sync_laws.py` 與
+`python -m legal_qa_platform.api.server` 都支援
+`--endpoint-scope auto|public|internal`。它們共用同一個 typed selector，只從
+上表已文件化的 fields 選擇 family，不接受 endpoint 或 credential 值，
+也不會改寫 process environment。`auto` 是預設值並保留 internal-first
+precedence；`public` 對 PostgreSQL 選 external host，對 Qdrant/LiteLLM 選
+public URL；`internal` 則只選 internal fields。明確選擇的 family 缺值時，
+診斷只列出該 family 的 environment-variable name，不會回退到另一組。
+
+CLI 只輸出 `internal`/`external`/`public`/`missing` 這些 family labels，
+不輸出 endpoint values。API server 將選擇後的 immutable
+`RuntimeSettings` 直接傳給 application factory/composition root，不透過暫時修改
+environment 來影響 ASGI process。`legal_qa_platform.api.app:app` 仍保留為標準
+ASGI import entry point，使用預設 `auto` 規則。
 
 目前 `compose.yaml` 以 external/public 欄位作為本機容器可達的必要入口，
 internal 欄位為選填；Kubernetes ConfigMap 範本則使用 internal 欄位。兩者都

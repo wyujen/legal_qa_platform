@@ -8,6 +8,19 @@ FastAPI 是 delivery adapter，entry point 為 `legal_qa_platform.api.app:app`�
 python -m legal_qa_platform.api.server --host 0.0.0.0 --port 8000
 ```
 
+當前 process 同時注入 internal 與 external/public endpoints，但本機只能連到
+external/public family 時，使用：
+
+```powershell
+python -m legal_qa_platform.api.server --endpoint-scope public --host 0.0.0.0 --port 8000
+```
+
+`--endpoint-scope auto|public|internal` 只選擇已文件化的 environment
+fields，不接受 endpoint 或 credential 值。預設 `auto` 保留 internal-first
+precedence。Server 直接將選擇後的 settings 傳給 application factory，
+不修改 process environment；startup 訊息只顯示 endpoint family，不顯示
+endpoint value。
+
 這個application-owned launcher在Windows使用psycopg async相容的selector event
 loop；Linux及其他平台維持標準`asyncio.run`行為。Operator不應以直接呼叫
 `uvicorn legal_qa_platform.api.app:app`取代它。

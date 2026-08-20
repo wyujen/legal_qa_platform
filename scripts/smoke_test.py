@@ -16,7 +16,14 @@ from pydantic import ValidationError
 
 from legal_qa_platform.adapters.http_safety import HttpReadinessResult
 from legal_qa_platform.async_runtime import run_async
-from legal_qa_platform.config import RuntimeSettings
+from legal_qa_platform.config import (
+    ENDPOINT_SCOPE_CHOICES,
+    EndpointScope,
+    RuntimeSettings,
+    missing_for_runtime_scope,
+    runtime_endpoint_families,
+    select_endpoint_scope,
+)
 from legal_qa_platform.container import ApplicationContainer
 from legal_qa_platform.domain.retrieval import RagContext
 from legal_qa_platform.ports.models import ChatMessage
@@ -39,7 +46,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path
     )
 
 DEFAULT_PROFILE_PATH = PROJECT_ROOT / "profiles" / "platform-baseline-v1.json"
-EndpointScope = Literal["auto", "public", "internal"]
+SmokePhase = Literal["dependencies", "full"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,11 +58,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--endpoint-scope",
-        choices=("auto", "public", "internal"),
+        choices=ENDPOINT_SCOPE_CHOICES,
         default="auto",
         help=(
             "Select endpoint families for this smoke run. 'auto' preserves "
             "application precedence; 'public' selects external/public endpoints."
+        ),
+    )
+    parser.add_argument(
+        "--phase",
+        choices=("dependencies", "full"),
+        default="full",
+        help=(
+            "Use 'dependencies' before data bootstrap, or 'full' to require "
+            "the published snapshot and Qdrant collection (default: full)."
         ),
     )
     return parser
@@ -65,31 +81,6 @@ def _elapsed_ms(started: float) -> int:
     return max(0, round((perf_counter() - started) * 1_000))
 
 
-def select_endpoint_scope(
-    settings: RuntimeSettings,
-    scope: EndpointScope,
-) -> RuntimeSettings:
-    """Select existing endpoint fields without adding configuration or credentials."""
-
-    if scope == "auto":
-        return settings
-    if scope == "public":
-        return settings.model_copy(
-            update={
-                "postgres_internal_host": None,
-                "qdrant_internal_http_url": None,
-                "litellm_internal_url": None,
-            }
-        )
-    return settings.model_copy(
-        update={
-            "postgres_external_host": None,
-            "qdrant_public_url": None,
-            "litellm_public_url": None,
-        }
-    )
-
-
 def endpoint_selection_message(
     settings: RuntimeSettings,
     *,
@@ -97,13 +88,13 @@ def endpoint_selection_message(
 ) -> str:
     """Describe selected endpoint families without retaining or printing values."""
 
-    status = settings.safe_status()
+    families = runtime_endpoint_families(settings)
     return (
         "[INFO] endpoint selection "
         f"scope={requested_scope} "
-        f"postgres={status['postgres_endpoint']} "
-        f"qdrant={status['qdrant_endpoint']} "
-        f"litellm={status['litellm_endpoint']}"
+        f"postgres={families.postgres} "
+        f"qdrant={families.qdrant} "
+        f"litellm={families.litellm}"
     )
 
 
@@ -114,7 +105,12 @@ def _readiness_fields(result: HttpReadinessResult) -> str:
     return fields
 
 
-async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
+async def run_smoke(
+    settings: RuntimeSettings,
+    profile_path: Path,
+    *,
+    phase: SmokePhase = "full",
+) -> int:
     try:
         container = ApplicationContainer.build(
             settings=settings,
@@ -134,23 +130,24 @@ async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
                 "[PASS] PostgreSQL application schema "
                 f"latency_ms={_elapsed_ms(started)}"
             )
-            started = perf_counter()
-            published = await container.repository.has_published_snapshot(
-                embedding_model=container.profile.embedding_model,
-                embedding_dimension=container.profile.embedding_dimension,
-                vector_collection=container.profile.vector_collection,
-            )
-            if published:
-                print(
-                    "[PASS] PostgreSQL published snapshot "
-                    f"latency_ms={_elapsed_ms(started)}"
+            if phase == "full":
+                started = perf_counter()
+                published = await container.repository.has_published_snapshot(
+                    embedding_model=container.profile.embedding_model,
+                    embedding_dimension=container.profile.embedding_dimension,
+                    vector_collection=container.profile.vector_collection,
                 )
-            else:
-                failures += 1
-                print(
-                    "[FAIL] PostgreSQL published snapshot missing "
-                    f"latency_ms={_elapsed_ms(started)}"
-                )
+                if published:
+                    print(
+                        "[PASS] PostgreSQL published snapshot "
+                        f"latency_ms={_elapsed_ms(started)}"
+                    )
+                else:
+                    failures += 1
+                    print(
+                        "[FAIL] PostgreSQL published snapshot missing "
+                        f"latency_ms={_elapsed_ms(started)}"
+                    )
         else:
             failures += 1
             print(
@@ -164,6 +161,8 @@ async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
             "[FAIL] PostgreSQL "
             f"category={safe_exception_category(exc)} latency_ms={_elapsed_ms(started)}"
         )
+    if phase == "dependencies":
+        print("[SKIP] PostgreSQL published snapshot phase=dependencies")
 
     qdrant_ready = False
     started = perf_counter()
@@ -188,7 +187,9 @@ async def run_smoke(settings: RuntimeSettings, profile_path: Path) -> int:
             f"category={safe_exception_category(exc)} latency_ms={_elapsed_ms(started)}"
         )
 
-    if qdrant_ready:
+    if phase == "dependencies":
+        print("[SKIP] Qdrant collection contract phase=dependencies")
+    elif qdrant_ready:
         started = perf_counter()
         try:
             collection_ready = await container.qdrant.collection_is_ready(
@@ -321,14 +322,16 @@ def main(argv: list[str] | None = None) -> int:
             requested_scope=args.endpoint_scope,
         )
     )
-    missing = settings.missing_for_runtime()
+    missing = missing_for_runtime_scope(settings, args.endpoint_scope)
     if missing:
         command = "python scripts/smoke_test.py"
+        if args.phase != "full":
+            command = f"{command} --phase {args.phase}"
         if args.endpoint_scope != "auto":
             command = f"{command} --endpoint-scope {args.endpoint_scope}"
         print_missing_variables(missing, command=command)
         return 2
-    return run_async(run_smoke(settings, profile_path))
+    return run_async(run_smoke(settings, profile_path, phase=args.phase))
 
 
 if __name__ == "__main__":

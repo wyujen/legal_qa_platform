@@ -58,6 +58,19 @@ def test_api_server_runs_inside_application_owned_runner(
 ) -> None:
     received: Coroutine[Any, Any, int] | None = None
 
+    for name, value in {
+        "POSTGRES_EXTERNAL_HOST": "postgres.example.invalid",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_LITELLM_USER": "application-role",
+        "POSTGRES_LITELLM_PASSWORD": "unit-test-password",
+        "POSTGRES_LITELLM_DATABASE": "application-database",
+        "QDRANT_PUBLIC_URL": "https://qdrant.example.invalid",
+        "QDRANT_API_KEY": "unit-test-qdrant-key",
+        "LITELLM_PUBLIC_URL": "https://litellm.example.invalid",
+        "LITELLM_API_KEY": "unit-test-litellm-key",
+    }.items():
+        monkeypatch.setenv(name, value)
+
     def fake_run(main: Coroutine[Any, Any, int]) -> int:
         nonlocal received
         received = main

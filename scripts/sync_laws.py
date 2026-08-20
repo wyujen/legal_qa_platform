@@ -9,7 +9,13 @@ from typing import Literal, cast
 from pydantic import ValidationError
 
 from legal_qa_platform.async_runtime import run_async
-from legal_qa_platform.config import RuntimeSettings
+from legal_qa_platform.config import (
+    ENDPOINT_SCOPE_CHOICES,
+    RuntimeSettings,
+    missing_for_runtime_scope,
+    runtime_endpoint_families,
+    select_endpoint_scope,
+)
 from legal_qa_platform.container import ApplicationContainer
 from legal_qa_platform.services.data_loader import load_legal_provisions
 from legal_qa_platform.services.ingestion import IngestionService
@@ -52,6 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile",
         default="profiles/platform-baseline-v1.json",
         help="Repository-relative RAG profile path.",
+    )
+    parser.add_argument(
+        "--endpoint-scope",
+        choices=ENDPOINT_SCOPE_CHOICES,
+        default="auto",
+        help=(
+            "Select endpoint families for this synchronization. 'auto' keeps "
+            "internal-first precedence; no endpoint values are accepted."
+        ),
     )
     parser.add_argument(
         "--confirm-authoritative-full-snapshot",
@@ -123,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         data_path = repository_path(args.data, default=DEFAULT_DATA_PATH)
         profile_path = repository_path(args.profile, default=DEFAULT_PROFILE_PATH)
-        settings = RuntimeSettings()
+        settings = select_endpoint_scope(RuntimeSettings(), args.endpoint_scope)
     except (ValueError, ValidationError):
         print(
             "[FAIL] synchronization configuration is invalid; check documented types."
@@ -141,11 +156,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    missing = settings.missing_for_runtime()
+    families = runtime_endpoint_families(settings)
+    print(
+        "[INFO] synchronization endpoint selection "
+        f"scope={args.endpoint_scope} "
+        f"postgres={families.postgres} "
+        f"qdrant={families.qdrant} "
+        f"litellm={families.litellm}"
+    )
+    missing = missing_for_runtime_scope(settings, args.endpoint_scope)
     if missing:
+        command = f"python scripts/sync_laws.py --mode {args.mode}"
+        if args.endpoint_scope != "auto":
+            command = f"{command} --endpoint-scope {args.endpoint_scope}"
         print_missing_variables(
             missing,
-            command=f"python scripts/sync_laws.py --mode {args.mode}",
+            command=command,
         )
         return 2
 

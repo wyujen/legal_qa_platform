@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Literal
 
 from pydantic import ValidationError
 
@@ -18,7 +17,13 @@ from legal_qa_platform.adapters.postgres import (
     create_postgres_migration_runner,
 )
 from legal_qa_platform.async_runtime import run_async
-from legal_qa_platform.config import PostgresMigrationSettings
+from legal_qa_platform.config import (
+    ENDPOINT_SCOPE_CHOICES,
+    PostgresMigrationSettings,
+    missing_for_migration_scope,
+    postgres_endpoint_family,
+    select_endpoint_scope,
+)
 from legal_qa_platform.errors import ConfigurationError
 
 try:
@@ -34,7 +39,6 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path
         safe_exception_category,
     )
 
-EndpointScope = Literal["auto", "public", "internal"]
 MIGRATIONS_DIRECTORY = PROJECT_ROOT / "migrations"
 
 
@@ -47,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--endpoint-scope",
-        choices=("auto", "public", "internal"),
+        choices=ENDPOINT_SCOPE_CHOICES,
         default="auto",
         help=(
             "Select the PostgreSQL endpoint family. 'auto' preserves runtime "
@@ -55,34 +59,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
-
-
-def select_postgres_endpoint_scope(
-    settings: PostgresMigrationSettings,
-    scope: EndpointScope,
-) -> PostgresMigrationSettings:
-    """Select one existing host field without changing runtime precedence."""
-
-    if scope == "auto":
-        return settings
-    if scope == "public":
-        return settings.model_copy(update={"postgres_internal_host": None})
-    return settings.model_copy(update={"postgres_external_host": None})
-
-
-def _missing_for_scope(
-    settings: PostgresMigrationSettings,
-    scope: EndpointScope,
-) -> tuple[str, ...]:
-    """Use a precise host name for an explicitly selected endpoint family."""
-
-    missing = list(settings.missing_for_migration())
-    generic = "POSTGRES_INTERNAL_HOST or POSTGRES_EXTERNAL_HOST"
-    if generic in missing and scope != "auto":
-        missing[missing.index(generic)] = (
-            "POSTGRES_EXTERNAL_HOST" if scope == "public" else "POSTGRES_INTERNAL_HOST"
-        )
-    return tuple(missing)
 
 
 async def run_migrations(
@@ -133,7 +109,7 @@ async def run_migrations(
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        settings = select_postgres_endpoint_scope(
+        settings = select_endpoint_scope(
             PostgresMigrationSettings(),
             args.endpoint_scope,
         )
@@ -141,18 +117,12 @@ def main(argv: list[str] | None = None) -> int:
         print("[FAIL] migration configuration is invalid; check documented types.")
         return 2
 
-    endpoint_family = (
-        "internal"
-        if settings.postgres_internal_host
-        else "external"
-        if settings.postgres_external_host
-        else "missing"
-    )
+    endpoint_family = postgres_endpoint_family(settings)
     print(
         "[INFO] migration endpoint selection "
         f"scope={args.endpoint_scope} postgres={endpoint_family}"
     )
-    missing = _missing_for_scope(settings, args.endpoint_scope)
+    missing = missing_for_migration_scope(settings, args.endpoint_scope)
     if missing:
         command = "python scripts/migrate.py"
         if args.endpoint_scope != "auto":

@@ -34,7 +34,21 @@ python -m legal_qa_platform.api.server --host 0.0.0.0 --port 8000
 
 如果 operator workstation 只能使用 external PostgreSQL host，而目前 process 同時
 注入 internal host，可在 migration command 加上 `--endpoint-scope public`。部署網路內
-可使用 `--endpoint-scope internal`；不接受 URL/credential argument。
+可使用 `--endpoint-scope internal`；不接受 URL/credential argument。同一 option 也
+適用於 sync、smoke 與 API server。例如 Human Operator 在工作站需完整使用
+external/public endpoints：
+
+```powershell
+python scripts/migrate.py --endpoint-scope public
+python scripts/smoke_test.py --endpoint-scope public --phase dependencies
+python scripts/sync_laws.py --mode full-snapshot --endpoint-scope public
+python -m legal_qa_platform.api.server --endpoint-scope public --host 0.0.0.0 --port 8000
+```
+
+每個 command 都獨立從當前 process 建立 immutable settings；不需要也不會修改
+environment。若同一個 process 同時具有兩組 endpoints，請在這些命令使用
+相同的 explicit scope，避免 migration、bootstrap 與 web process 連到不同的
+service family。
 
 `full-snapshot` 只能用於完整權威資料；增量資料使用：
 
