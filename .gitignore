@@ -24,6 +24,9 @@ secrets/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
+test-results/
+evaluation-results/
 
 # Build
 build/
@@ -40,3 +43,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local databases and generated vector/evaluation artifacts
+*.sqlite3
+*.npy
+embedding_metadata.json
